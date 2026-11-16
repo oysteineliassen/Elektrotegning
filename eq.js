@@ -5,6 +5,7 @@
 let edMode = 'mal';
 const EQ = { items: [], info: {} };
 let eqSel = null, eqArm = null;
+let eqTool = 'sel', runStart = null, runSel = null;
 
 function eqActive() { return edMode === 'utstyr' && doc && doc.kind === 'dxf'; }
 
@@ -44,6 +45,35 @@ function buildItems() {
     for (const it of orig) { const d = Math.hypot(it.ox - t.x, it.oy - t.y); if (d < bd) { bd = d; best = it; } }
     if (best) { t.item = best.key; best.labels.push(t); }
   }
+  // antall uttak (tallet ved stikkontakten)
+  EQ.num = {};
+  for (const it of EQ.items) {
+    it.numLabel = it.labels.find(t => /^\d+$/.test(t.s.trim())) || null;
+    if (it.added) { const a = P.eq.added.find(q => q.id === it.id); it.n = a && a.n != null ? a.n : 1; it.n0 = it.n; continue; }
+    it.n0 = it.numLabel ? parseInt(it.numLabel.s, 10) : 1;
+    const e = P.eq.edits[it.idx];
+    it.n = e && e.n != null ? e.n : it.n0;
+    if (it.numLabel) {
+      const N = EQ.num[it.block] || (EQ.num[it.block] = { counts: {} });
+      if (!N.t) {
+        const t = it.numLabel, dx = t.x - it.ox, dy = t.y - it.oy, c = Math.cos(-it.or), sn = Math.sin(-it.or);
+        N.t = t; N.lx = c * dx - sn * dy; N.ly = sn * dx + c * dy;
+      }
+      N.counts[it.n0] = (N.counts[it.n0] || 0) + 1;
+    }
+  }
+  P.eq.runs = P.eq.runs || [];
+}
+function countable(block) { return !!(EQ.num && EQ.num[block]) || /stikk|socket|uttak/i.test(block); }
+function defaultN(block) {
+  const N = EQ.num && EQ.num[block];
+  if (N) return +Object.entries(N.counts).sort((a, b) => b[1] - a[1])[0][0];
+  return countable(block) ? 2 : 1;
+}
+function numPos(it) {
+  const N = EQ.num[it.block];
+  const c = Math.cos(it.r), sn = Math.sin(it.r);
+  return { x: it.x + c * N.lx - sn * N.ly, y: it.y + sn * N.lx + c * N.ly };
 }
 function itemCenter(it, useOrig) {
   const g = doc.geom(it.block);
@@ -84,7 +114,8 @@ function infoOf(block) {
   return EQ.info[block] || (EQ.info[block] = { wall: WALLMOUNT_RE.test(block), local: Math.PI / 2, off: 0 });
 }
 function isMoved(it) { return !it.added && (Math.abs(it.x - it.ox) > 1e-6 || Math.abs(it.y - it.oy) > 1e-6 || Math.abs(it.r - it.or) > 1e-6); }
-function changeCount() { return EQ.items.filter(i => i.added || i.del || isMoved(i)).length; }
+function isChanged(it) { return isMoved(it) || (!it.added && it.n !== it.n0); }
+function changeCount() { return EQ.items.filter(i => i.added || i.del || isChanged(i)).length + (P.eq.runs || []).length; }
 
 /* ---------- Plassering med vegg-magnet ---------- */
 function placeItem(it, ux, uy) {
@@ -100,8 +131,8 @@ function placeItem(it, ux, uy) {
 function commitItem(it) {
   if (it.added) {
     const a = P.eq.added.find(q => q.id === it.id);
-    if (a) Object.assign(a, { x: it.x, y: it.y, r: it.r });
-  } else if (it.del || isMoved(it)) P.eq.edits[it.idx] = { x: it.x, y: it.y, r: it.r, del: it.del || undefined };
+    if (a) Object.assign(a, { x: it.x, y: it.y, r: it.r, n: it.n });
+  } else if (it.del || isChanged(it)) P.eq.edits[it.idx] = { x: it.x, y: it.y, r: it.r, del: it.del || undefined, n: it.n !== it.n0 ? it.n : undefined };
   else delete P.eq.edits[it.idx];
 }
 
@@ -121,6 +152,7 @@ function drawBlock(ctx, v, dpr, g, x, y, r, sx, sy, col, alpha, k) {
 function drawEquip(ctx, v, dpr, o, W, H) {
   const L = doc.r.layers, k = o.k || 1;
   const showChg = !o.export && S.showChg !== false && edMode === 'utstyr';
+  drawRuns(ctx, v, dpr, o);
   for (const it of EQ.items) {
     if (!doc.show[it.li]) continue;
     const g = doc.geom(it.block);
@@ -151,19 +183,36 @@ function drawEquip(ctx, v, dpr, o, W, H) {
       ctx.save();
       ctx.setTransform(dpr * v.s, 0, 0, dpr * v.s, dpr * v.tx, dpr * v.ty);
       const dr = it.r - it.or, c = Math.cos(dr), sn = Math.sin(dr);
-      for (const t of it.labels) {
+      for (let t of it.labels) {
+        if (t === it.numLabel) { if (it.n < 2) continue; if (it.n !== it.n0) t = { ...t, s: String(it.n) }; }
         const ax = t.x - it.ox, ay = t.y - it.oy;
         drawText(ctx, t, v, W, H, col, it.x + c * ax - sn * ay - t.x, it.y + sn * ax + c * ay - t.y);
       }
       ctx.restore();
     }
-    if (showChg && (moved || it.added)) {
+    if (!it.numLabel && it.n >= 2 && EQ.num[it.block]) {
+      const q = numPos(it);
+      ctx.save();
+      ctx.setTransform(dpr * v.s, 0, 0, dpr * v.s, dpr * v.tx, dpr * v.ty);
+      drawText(ctx, { ...EQ.num[it.block].t, x: q.x, y: q.y, s: String(it.n) }, v, W, H, col, 0, 0);
+      ctx.restore();
+    }
+    if (showChg && (moved || it.added || it.n !== it.n0)) {
       const c = itemCenter(it);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      const sx = c.x * v.s + v.tx + Math.max(10, g.rad * v.s * 0.8), sy = c.y * v.s + v.ty - Math.max(10, g.rad * v.s * 0.8);
+      const sx = c.x * v.s + v.tx - Math.max(10, g.rad * v.s * 0.8), sy = c.y * v.s + v.ty - Math.max(10, g.rad * v.s * 0.8);
       ctx.beginPath(); ctx.arc(sx, sy, 5, 0, Math.PI * 2);
       ctx.fillStyle = it.added ? '#16a34a' : '#ea580c'; ctx.fill();
       ctx.lineWidth = 1.5; ctx.strokeStyle = '#fff'; ctx.stroke();
+    }
+  }
+  if (!o.export && edMode === 'utstyr' && runStart) {
+    const it = EQ.items.find(i => i.key === runStart);
+    if (it) {
+      const c = itemCenter(it);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.beginPath(); ctx.arc(c.x * v.s + v.tx, c.y * v.s + v.ty, 20, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(220,38,38,.15)'; ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = '#dc2626'; ctx.stroke();
     }
   }
   if (!o.export && edMode === 'utstyr' && eqSel) {
@@ -195,7 +244,20 @@ function hitItem(x, y) {
 function eqSelect(key) { eqSel = key; updateEqBar(); req(); }
 
 function eqTap(x, y, g) {
-  if (g.hi) { eqSelect(eqSel === g.hi.key ? null : g.hi.key); return; }
+  if (eqTool === 'run') {
+    if (g.hi) {
+      if (!runStart) runStart = g.hi.key;
+      else if (runStart !== g.hi.key) { addRun(runStart, g.hi.key); runStart = g.hi.key; }
+      runBanner(); req(); return;
+    }
+    const hr = hitRun(x, y);
+    if (hr) { runSel = hr.id; eqSel = null; updateEqBar(); req(); return; }
+    runStart = null; runSel = null; runBanner(); updateEqBar(); req(); return;
+  }
+  if (g.hi) { runSel = null; eqSelect(eqSel === g.hi.key ? null : g.hi.key); return; }
+  const hr = hitRun(x, y);
+  if (hr && !eqArm) { runSel = hr.id; eqSel = null; updateEqBar(); req(); return; }
+  runSel = null;
   if (eqArm) { addItem(eqArm, toUnit(x, y)); return; }
   eqSelect(null);
 }
@@ -209,11 +271,12 @@ function addItem(block, u) {
   const layer = t ? t.layer : (doc.r.layers.find((l, i) => doc.equip[i]) || { name: '0' }).name;
   const id = uid();
   const it = { key: 'a' + id, id, idx: null, added: true, block, layer, li: Math.max(0, layerIndex(layer)),
-    x: u.x, y: u.y, r: t ? t.r : 0, sx: t ? t.sx : 1, sy: t ? t.sy : 1, tmpl: t ? t.idx : null, del: false, labels: [] };
+    x: u.x, y: u.y, r: t ? t.r : 0, sx: t ? t.sx : 1, sy: t ? t.sy : 1, tmpl: t ? t.idx : null, del: false, labels: [], numLabel: null };
+  it.n = it.n0 = defaultN(block);
   placeItem(it, u.x, u.y);
   it.ox = it.x; it.oy = it.y; it.or = it.r;
   EQ.items.push(it);
-  P.eq.added.push({ id, block, layer, x: it.x, y: it.y, r: it.r, sx: it.sx, sy: it.sy, tmpl: it.tmpl });
+  P.eq.added.push({ id, block, layer, x: it.x, y: it.y, r: it.r, sx: it.sx, sy: it.sy, tmpl: it.tmpl, n: it.n });
   eqSelect(it.key);
   save();
   return it;
@@ -245,42 +308,74 @@ function endItemDrag() {
   commitItem(it); save(); updateEqBar(); req();
 }
 
-/* ---------- Handlingslinje for valgt symbol ---------- */
+/* ---------- Handlingslinje for valgt symbol / føring ---------- */
 function updateEqBar() {
   const bar = $('#eqbar');
-  const it = eqSel && EQ.items.find(i => i.key === eqSel);
-  if (!eqActive() || !it || it.del || (gest && gest.type === 'idrag')) { bar.classList.remove('on'); return; }
-  $('#eqName').textContent = prettyBlock(it.block) + (it.added ? ' · ny' : isMoved(it) ? ' · flyttet' : '');
-  $('#eqReset').style.display = isMoved(it) ? '' : 'none';
+  $('#npick').classList.remove('on');
+  const run = runSel && (P.eq.runs || []).find(r => r.id === runSel);
+  const it = !run && eqSel && EQ.items.find(i => i.key === eqSel);
+  if (!eqActive() || (!run && (!it || it.del)) || (gest && gest.type === 'idrag')) { bar.classList.remove('on'); bar.dataset.k = ''; return; }
+  let html;
+  if (run) html = `<b>Føring</b><button data-a="rflip" title="Bøy andre veien">⇅</button><button data-a="rbend" title="Mer/mindre bue">⌒</button><button data-a="rdel" title="Slett">🗑</button>`;
+  else html = `<b>${esc(prettyBlock(it.block))}${it.added ? ' · ny' : isMoved(it) ? ' · flyttet' : ''}</b>`
+    + (countable(it.block) ? `<button class="num" data-a="n" title="Antall uttak">${it.n}×</button>` : '')
+    + `<button data-a="rot" title="Roter 90°">⟳</button><button data-a="flip" title="Snu til andre siden av veggen">⇅</button><button data-a="dup" title="Kopier">⧉</button>`
+    + (isMoved(it) ? `<button data-a="reset" title="Tilbake til prosjektert">↺</button>` : '')
+    + `<button data-a="del" title="Slett">🗑</button>`;
+  if (bar.dataset.k !== html) {
+    bar.innerHTML = html; bar.dataset.k = html;
+    bar.querySelectorAll('[data-a]').forEach(b => b.onclick = () => eqAction(b.dataset.a));
+  }
   bar.classList.add('on');
   positionEqBar();
+}
+function selAnchor() {
+  const run = runSel && (P.eq.runs || []).find(r => r.id === runSel);
+  if (run) { const g = runGeom(run); return g ? { x: g.apex.x * view.s + view.tx, y: g.apex.y * view.s + view.ty, r: 14 } : null; }
+  const it = EQ.items.find(i => i.key === eqSel);
+  if (!it) return null;
+  const g = doc.geom(it.block), c = itemCenter(it);
+  return { x: c.x * view.s + view.tx, y: c.y * view.s + view.ty, r: Math.max(22, (g ? g.rad * Math.abs(it.sx) : 0) * view.s + 10) };
 }
 function positionEqBar() {
   const bar = $('#eqbar');
   if (!bar.classList.contains('on')) return;
-  const it = EQ.items.find(i => i.key === eqSel);
-  if (!it) return;
-  const g = doc.geom(it.block), c = itemCenter(it);
-  const sx = c.x * view.s + view.tx, sy = c.y * view.s + view.ty;
-  const rr = Math.max(22, (g ? g.rad * Math.abs(it.sx) : 0) * view.s + 10);
+  const a = selAnchor();
+  if (!a) return;
   const bw = bar.offsetWidth, bh = bar.offsetHeight;
-  let top = sy - rr - bh - 10;
-  if (top < 8) top = sy + rr + 10;
-  bar.style.left = clamp(sx - bw / 2, 8, cw - bw - 8) + 'px';
+  let top = a.y - a.r - bh - 10;
+  if (top < 8) top = a.y + a.r + 10;
+  bar.style.left = clamp(a.x - bw / 2, 8, cw - bw - 8) + 'px';
   bar.style.top = clamp(top, 8, ch - bh - 8) + 'px';
+  const np = $('#npick');
+  if (np.classList.contains('on')) {
+    const below = top < a.y;
+    np.style.left = clamp(a.x - np.offsetWidth / 2, 8, cw - np.offsetWidth - 8) + 'px';
+    np.style.top = clamp(below ? top - np.offsetHeight - 6 : top + bh + 6, 8, ch - np.offsetHeight - 8) + 'px';
+  }
+}
+function openNPick(it) {
+  const np = $('#npick');
+  np.innerHTML = [1, 2, 3, 4, 5, 6].map(n => `<button data-n="${n}" class="${n === it.n ? 'on' : ''}">${n}</button>`).join('');
+  np.querySelectorAll('[data-n]').forEach(b => b.onclick = () => {
+    pushUndo(); it.n = +b.dataset.n; commitItem(it); save();
+    np.classList.remove('on'); updateEqBar(); updateTitle(); req();
+  });
+  np.classList.add('on');
+  positionEqBar();
 }
 function eqAction(a) {
+  if (a[0] === 'r' && a !== 'rot' && a !== 'reset') return runAction(a);
   const it = EQ.items.find(i => i.key === eqSel);
   if (!it) return;
   const mpu = P.mmPerUnit || 1;
+  if (a === 'n') { if ($('#npick').classList.contains('on')) $('#npick').classList.remove('on'); else openNPick(it); return; }
   if (a === 'rot') { pushUndo(); it.r += Math.PI / 2; }
   else if (a === 'flip') {
     pushUndo();
-    // snu til andre siden av veggen
     const info = infoOf(it.block);
     const tw = it.r + info.local, tx = Math.cos(tw), ty = Math.sin(tw);
     const w = doc.nearestWall(it.x + tx * (info.off + 1 / mpu), it.y + ty * (info.off + 1 / mpu), 600 / mpu, -1);
-    // finn motsatt flate: gå gjennom veggen
     let moved = false;
     if (w) {
       for (let d = 20; d < 800; d += 10) {
@@ -297,6 +392,7 @@ function eqAction(a) {
     const c = Math.cos(it.r), s = Math.sin(it.r), d = 500 / mpu;
     const n = addItem(it.block, { x: it.x + c * d, y: it.y + s * d });
     if (!infoOf(it.block).wall) n.r = it.r;
+    n.n = it.n;
     n.ox = n.x; n.oy = n.y; n.or = n.r; commitItem(n);
     toast('Kopi lagt til – hold inne for å flytte den');
   }
@@ -310,7 +406,111 @@ function eqAction(a) {
   if (a !== 'dup' && EQ.items.includes(it)) commitItem(it);
   save(); updateEqBar(); updateTitle(); req();
 }
-document.querySelectorAll('#eqbar [data-a]').forEach(b => b.onclick = () => eqAction(b.dataset.a));
+
+/* ---------- Føringer (buet strek = skjult anlegg) ---------- */
+function itemByKey(k) { return EQ.items.find(i => i.key === k && !i.del); }
+function itemRad(it) { const g = doc.geom(it.block); return g ? g.rad * Math.abs(it.sx) * 0.85 : 0; }
+function arcPoints(p1, p2, b, n) {
+  const th = 4 * Math.atan(b), dx = p2.x - p1.x, dy = p2.y - p1.y, c = Math.hypot(dx, dy);
+  if (Math.abs(b) < 1e-6) return [p1, p2];
+  const h = c / (2 * Math.tan(th / 2));
+  const cx = (p1.x + p2.x) / 2 + (-dy / c) * h, cy = (p1.y + p2.y) / 2 + (dx / c) * h;
+  const r = Math.hypot(p1.x - cx, p1.y - cy), a1 = Math.atan2(p1.y - cy, p1.x - cx);
+  const out = [];
+  for (let i = 0; i <= n; i++) { const a = a1 + th * i / n; out.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) }); }
+  return out;
+}
+function runGeom(run) {
+  const A = itemByKey(run.a), B = itemByKey(run.b);
+  if (!A || !B) return null;
+  const ca = itemCenter(A), cb = itemCenter(B);
+  const d = Math.hypot(cb.x - ca.x, cb.y - ca.y);
+  if (d < 1e-6) return null;
+  const ux = (cb.x - ca.x) / d, uy = (cb.y - ca.y) / d;
+  const ra = Math.min(itemRad(A), d * 0.3), rb = Math.min(itemRad(B), d * 0.3);
+  const p1 = { x: ca.x + ux * ra, y: ca.y + uy * ra }, p2 = { x: cb.x - ux * rb, y: cb.y - uy * rb };
+  const pts = arcPoints(p1, p2, run.bu, 32);
+  return { p1, p2, pts, apex: pts[Math.floor(pts.length / 2)] };
+}
+function runLayer() {
+  const L = doc.r.layers;
+  const l = L.find(l => /f[øo]ring|r[øo]r|conduit|kabel[-_ ]?f/i.test(l.name)) || L.find(l => /^E[-_ ]/i.test(l.name));
+  return l ? l.name : 'E-FØRING';
+}
+function addRun(a, b) {
+  pushUndo();
+  const run = { id: uid(), a, b, bu: 0.4 };
+  // bøy bort fra nærmeste vegg
+  const mpu = P.mmPerUnit || 1;
+  const score = bb => {
+    run.bu = bb; const g = runGeom(run); if (!g) return 0;
+    const w = doc.nearestWall(g.apex.x, g.apex.y, 4000 / mpu, -1);
+    return w ? w.d : 4000 / mpu;
+  };
+  run.bu = score(0.4) >= score(-0.4) ? 0.4 : -0.4;
+  P.eq.runs.push(run);
+  save(); updateTitle();
+  try { navigator.vibrate && navigator.vibrate(10); } catch (e) { }
+}
+function hitRun(x, y) {
+  let best = null, bd = 14;
+  for (const run of (P.eq.runs || [])) {
+    const g = runGeom(run);
+    if (!g) continue;
+    for (let i = 0; i + 1 < g.pts.length; i++) {
+      const a = g.pts[i], b = g.pts[i + 1];
+      const ax = a.x * view.s + view.tx, ay = a.y * view.s + view.ty, bx = b.x * view.s + view.tx, by = b.y * view.s + view.ty;
+      const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1;
+      const t = clamp(((x - ax) * dx + (y - ay) * dy) / l2, 0, 1);
+      const d = Math.hypot(x - ax - t * dx, y - ay - t * dy);
+      if (d < bd) { bd = d; best = run; }
+    }
+  }
+  return best;
+}
+function drawRuns(ctx, v, dpr, o) {
+  const runs = P.eq && P.eq.runs;
+  if (!runs || !runs.length) return;
+  const li = doc.r.layers.findIndex(l => l.name === runLayer());
+  const col = li >= 0 ? aci(doc.r.layers[li].color) : '#dc2626';
+  ctx.save();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.lineCap = 'round';
+  for (const run of runs) {
+    const g = runGeom(run);
+    if (!g) continue;
+    const sel = !o.export && run.id === runSel;
+    ctx.strokeStyle = sel ? '#2563eb' : col;
+    ctx.lineWidth = (sel ? 3 : 1.6) * (o.k || 1);
+    ctx.beginPath();
+    g.pts.forEach((p, i) => { const x = p.x * v.s + v.tx, y = p.y * v.s + v.ty; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+function runAction(a) {
+  const i = P.eq.runs.findIndex(r => r.id === runSel);
+  if (i < 0) return;
+  const run = P.eq.runs[i];
+  pushUndo();
+  if (a === 'rflip') run.bu = -run.bu;
+  else if (a === 'rbend') { const lv = [0.2, 0.4, 0.7], k = lv.findIndex(x => Math.abs(Math.abs(run.bu) - x) < 0.01); run.bu = Math.sign(run.bu || 1) * lv[(k + 1) % lv.length]; }
+  else if (a === 'rdel') { P.eq.runs.splice(i, 1); runSel = null; }
+  save(); updateEqBar(); updateTitle(); req();
+}
+function runBanner() {
+  if (eqTool !== 'run') return;
+  setBanner(runStart ? 'Trykk på neste punkt – eller i tomt område for å avslutte' : 'Føring: trykk på første punkt', 'Ferdig', () => setRunTool(false));
+}
+function setRunTool(on) {
+  eqTool = on ? 'run' : 'sel';
+  runStart = null;
+  $('#runBtn').classList.toggle('on', on);
+  if (on) { setArm(null); eqSel = null; runSel = null; updateEqBar(); runBanner(); }
+  else setBanner(null);
+  req();
+}
+$('#runBtn').onclick = () => setRunTool(eqTool !== 'run');
 
 /* ---------- Palett ---------- */
 function prettyBlock(n) { return n.replace(/^(E|EL)[-_ ]/i, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim(); }
@@ -340,6 +540,7 @@ function buildPalette() {
   });
 }
 function setArm(name) {
+  if (name && eqTool === 'run') setRunTool(false);
   eqArm = name;
   document.querySelectorAll('#pal .pchip').forEach(b => b.classList.toggle('on', b.dataset.b === name));
   if (name) setBanner(`Trykk på tegningen for å sette inn «${prettyBlock(name)}»`, 'Ferdig', () => setArm(null));
@@ -406,8 +607,8 @@ function setEdMode(m) {
   edMode = m;
   document.querySelectorAll('#modeSeg button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
   $('#tools').classList.toggle('eq', m === 'utstyr');
-  setArm(null);
-  eqSel = null; select(null); updateEqBar(); updateTitle(); req();
+  setArm(null); if (eqTool === 'run') setRunTool(false);
+  eqSel = null; runSel = null; select(null); updateEqBar(); updateTitle(); req();
 }
 document.querySelectorAll('#modeSeg button').forEach(b => b.onclick = () => setEdMode(b.dataset.m));
 $('#chgBtn').onclick = () => {
@@ -429,7 +630,26 @@ function eqChanges() {
     }
   }
   const added = P.eq.added.map(a => ({ ...a }));
-  return { moved, deleted, added, textMoves, textDeletes };
+  const textEdits = new Map(), addedTexts = [], addedRaw = [];
+  for (const it of EQ.items) {
+    if (it.del) continue;
+    const N = EQ.num[it.block];
+    if (!it.added && it.n === it.n0) continue;
+    if (it.numLabel && !it.added) {
+      if (it.n < 2) textDeletes.add(it.numLabel.rec); else textEdits.set(it.numLabel.rec, String(it.n));
+    } else if (it.n >= 2 && N && N.t.rec) {
+      const q = numPos(it);
+      addedTexts.push({ rec: N.t.rec, x: q.x, y: q.y, s: String(it.n) });
+    }
+  }
+  const layer = runLayer(), f = DXF.fmtN;
+  for (const run of (P.eq.runs || [])) {
+    const g = runGeom(run);
+    if (!g) continue;
+    addedRaw.push({ type: 'LWPOLYLINE', pairs: [[100, 'AcDbEntity'], [8, layer], [6, 'Continuous'], [100, 'AcDbPolyline'], [90, '2'], [70, '0'],
+      [10, f(g.p1.x)], [20, f(-g.p1.y)], [42, f(-run.bu)], [10, f(g.p2.x)], [20, f(-g.p2.y)]] });
+  }
+  return { moved, deleted, added, textMoves, textDeletes, textEdits, addedTexts, addedRaw };
 }
 async function exportDxf() {
   try {

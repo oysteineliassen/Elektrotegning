@@ -133,7 +133,15 @@
   #modeSeg.on { display: flex; }
   #modeSeg button { flex: 1; padding: 7px; border-radius: 999px; font-size: 14px; }
   #modeSeg button.on { background: #fff; color: #111; border-color: #fff; font-weight: 600; }
-  #pal, #chgBtn { display: none; }
+  #pal, #chgBtn, #runBtn { display: none; }
+  #tools.eq #runBtn { display: block; }
+  #runBtn { flex: none; width: 42px; height: 40px; padding: 0; border-radius: 999px; font-size: 20px; }
+  #runBtn.on { background: #dc2626; border-color: #dc2626; color: #fff; }
+  #npick { position: absolute; display: none; gap: 4px; padding: 5px; background: #111827; border-radius: 999px; box-shadow: 0 6px 20px rgba(0,0,0,.35); z-index: 4; }
+  #npick.on { display: flex; }
+  #npick button { width: 40px; height: 40px; padding: 0; border-radius: 999px; background: #273244; border: none; color: #fff; font-weight: 700; font-size: 16px; }
+  #npick button.on { background: var(--accent); color: #111; }
+  #eqbar button.num { width: auto; padding: 0 12px; font-weight: 700; font-size: 15px; }
   #tools.eq #chips, #tools.eq #placeBtn { display: none; }
   #tools.eq #pal { display: flex; }
   #tools.eq #chgBtn { display: block; }
@@ -182,7 +190,8 @@
   <div id="modeSeg"><button data-m="mal" class="on">📏 Takpunkter</button><button data-m="utstyr">🔌 Utstyr</button></div>
   <div id="stage">
     <canvas id="cv"></canvas>
-    <div id="eqbar"><b id="eqName"></b><button data-a="rot" title="Roter 90°">⟳</button><button data-a="flip" title="Snu til andre siden av veggen">⇅</button><button data-a="dup" title="Kopier">⧉</button><button data-a="reset" id="eqReset" title="Tilbake til prosjektert">↺</button><button data-a="del" title="Slett">🗑</button></div>
+    <div id="eqbar"></div>
+    <div id="npick"></div>
     <div id="banner"><span id="bannerTxt"></span><button id="bannerBtn">Avbryt</button></div>
     <div id="loading">Laster tegning …</div>
   </div>
@@ -201,6 +210,7 @@
     <div id="chips"></div>
     <button id="placeBtn" class="on">＋ Plasser</button>
     <div id="pal"></div>
+    <button id="runBtn" aria-label="Tegn føring">〰</button>
     <button id="chgBtn" class="on" aria-label="Vis endringer">👁</button>
     <button id="undoBtn" aria-label="Angre">↶</button>
   </div>

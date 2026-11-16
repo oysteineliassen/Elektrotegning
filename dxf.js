@@ -561,16 +561,24 @@
       if (mv) reps.push({ ln: ins.ln, lnEnd: ins.lnEnd, out: buildInsert(ins, { sx: ins.sx, sy: ins.sy, ...mv }, false) });
     }
     if (changes.textDeletes) for (const rec of changes.textDeletes) reps.push({ ln: rec.ln, lnEnd: rec.lnEnd, out: [] });
-    if (changes.textMoves) for (const [rec, mv] of changes.textMoves) {
-      // mv: {ox, oy, nx, ny, dr} i appens koordinater (y ned): p' = n + R(dr)(p - o)
-      const p = recPairs(rec), c = Math.cos(mv.dr || 0), s = Math.sin(mv.dr || 0);
-      for (const [cx, cy] of [[10, 20], [11, 21]]) {
-        const ix = p.findIndex(q => q[0] === cx), iy = p.findIndex(q => q[0] === cy);
-        if (ix < 0 || iy < 0) continue;
-        if (cx === 11 && rec.type === 'MTEXT') continue; // retningsvektor
-        const ax = parseFloat(p[ix][1]) - mv.ox, ay = -parseFloat(p[iy][1]) - mv.oy;
-        p[ix][1] = fmtN(mv.nx + c * ax - s * ay); p[iy][1] = fmtN(-(mv.ny + s * ax + c * ay));
+    const trecs = new Set([...(changes.textMoves ? changes.textMoves.keys() : []), ...(changes.textEdits ? changes.textEdits.keys() : [])]);
+    for (const rec of trecs) {
+      if (changes.textDeletes && changes.textDeletes.has(rec)) continue;
+      const p = recPairs(rec);
+      const mv = changes.textMoves && changes.textMoves.get(rec);
+      if (mv) {
+        // mv: {ox, oy, nx, ny, dr} i appens koordinater (y ned): p' = n + R(dr)(p - o)
+        const c = Math.cos(mv.dr || 0), s = Math.sin(mv.dr || 0);
+        for (const [cx, cy] of [[10, 20], [11, 21]]) {
+          const ix = p.findIndex(q => q[0] === cx), iy = p.findIndex(q => q[0] === cy);
+          if (ix < 0 || iy < 0) continue;
+          if (cx === 11 && rec.type === 'MTEXT') continue;
+          const ax = parseFloat(p[ix][1]) - mv.ox, ay = -parseFloat(p[iy][1]) - mv.oy;
+          p[ix][1] = fmtN(mv.nx + c * ax - s * ay); p[iy][1] = fmtN(-(mv.ny + s * ax + c * ay));
+        }
       }
+      const ed = changes.textEdits && changes.textEdits.get(rec);
+      if (ed !== undefined) { const i1 = p.findIndex(q => q[0] === 1); if (i1 >= 0) p[i1][1] = ed; }
       reps.push({ ln: rec.ln, lnEnd: rec.lnEnd, out: emit(rec.type, p) });
     }
     // nye
@@ -588,6 +596,29 @@
         addOut = addOut.concat(emit('INSERT', p));
       }
     }
+    // nye tekster (kopi av mal-tekst flyttet til nytt punkt, app-koordinater)
+    for (const t of (changes.addedTexts || [])) {
+      const p = recPairs(t.rec);
+      const ax = num(t.rec, 72, 0) !== 0 || num(t.rec, 73, 0) !== 0;
+      const refX = ax ? num(t.rec, 11, 0) : num(t.rec, 10, 0), refY = ax ? num(t.rec, 21, 0) : num(t.rec, 20, 0);
+      const dX = t.x - refX, dY = -t.y - refY;
+      for (const [cx, cy] of [[10, 20], [11, 21]]) {
+        const ix = p.findIndex(q => q[0] === cx), iy = p.findIndex(q => q[0] === cy);
+        if (ix < 0 || iy < 0) continue;
+        p[ix][1] = fmtN(parseFloat(p[ix][1]) + dX); p[iy][1] = fmtN(parseFloat(p[iy][1]) + dY);
+      }
+      const i1 = p.findIndex(q => q[0] === 1); if (i1 >= 0) p[i1][1] = t.s;
+      const h = p.findIndex(q => q[0] === 5); if (h >= 0) { const nh = newHandle(); if (nh) p[h][1] = nh; else p.splice(h, 1); }
+      addOut = addOut.concat(emit(t.rec.type, p));
+    }
+    // nye rå-entiteter (f.eks. føringer) – pairs uten håndtak
+    const owner = parsed.inserts.length ? get(parsed.inserts[0].rec, 330, null) : null;
+    for (const e of (changes.addedRaw || [])) {
+      const h = newHandle(), p = [];
+      if (h) p.push([5, h]);
+      if (h && owner) p.push([330, owner]);
+      addOut = addOut.concat(emit(e.type, p.concat(e.pairs)));
+    }
     if (addOut.length && src.entEndLn >= 0) reps.push({ ln: src.entEndLn, lnEnd: src.entEndLn, out: addOut });
 
     reps.sort((a, b) => b.ln - a.ln || b.lnEnd - a.lnEnd);
@@ -599,7 +630,7 @@
     return lines.join('\r\n');
   }
 
-  const api = { parseDXF, decodeBytes, writeDXF };
+  const api = { parseDXF, decodeBytes, writeDXF, fmtN };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.DXF = api;
 })(typeof self !== 'undefined' ? self : this);
