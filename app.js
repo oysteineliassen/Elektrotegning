@@ -266,16 +266,25 @@ class DxfDoc {
       t = t < 0 ? 0 : t > 1 ? 1 : t;
       const px = ax + t * dx, py = ay + t * dy, d = Math.hypot(x - px, y - py);
       if (d > maxD) continue;
-      const c = { k, d, px, py, t, dx, dy };
-      if (!best || d < best.d) best = c;
+      const c = { k, d, px, py, t, dx, dy, l2 };
+      // likt (felles hjørne): velg segmentet der punktet ligger innenfor, ellers det lengste
+      if (!best || d < best.d - 0.5) best = c;
+      else if (d < best.d + 0.5) {
+        const ci = t > 0 && t < 1, bi = best.t > 0 && best.t < 1;
+        if ((ci && !bi) || (ci === bi && l2 > best.l2)) best = c;
+      }
       if (k === prefer) pref = c;
     }
     if (pref && best && pref.d < best.d + maxD * 0.15) best = pref;
     if (!best) return null;
     const len = Math.hypot(best.dx, best.dy);
     best.tx = best.dx / len; best.ty = best.dy / len;
-    if (best.d > 1e-9) { best.nx = (x - best.px) / best.d; best.ny = (y - best.py) / best.d; }
-    else { best.nx = -best.ty; best.ny = best.tx; }
+    if (best.d > 1e-9 && best.t > 0 && best.t < 1) { best.nx = (x - best.px) / best.d; best.ny = (y - best.py) / best.d; }
+    else {
+      // ved endepunkt/på linjen: bruk veggens normal, mot siden punktet ligger på
+      best.nx = -best.ty; best.ny = best.tx;
+      if ((x - best.px) * best.nx + (y - best.py) * best.ny < 0) { best.nx = -best.nx; best.ny = -best.ny; }
+    }
     return best;
   }
 }

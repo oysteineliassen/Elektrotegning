@@ -74,8 +74,9 @@ function learnBlocks() {
   }
   EQ.info = {};
   for (const [b, m] of Object.entries(acc)) {
-    EQ.info[b] = m.angs.length >= Math.max(1, m.n * 0.5)
-      ? { wall: true, local: circMean(m.angs), off: median(m.offs) }
+    const off = median(m.offs);
+    EQ.info[b] = m.angs.length >= Math.max(1, m.n * 0.5) && (off * mpu <= 150 || WALLMOUNT_RE.test(b))
+      ? { wall: true, local: circMean(m.angs), off }
       : { wall: false, local: Math.PI / 2, off: 0 };
   }
 }
@@ -149,7 +150,11 @@ function drawEquip(ctx, v, dpr, o, W, H) {
     if (it.labels.length) {
       ctx.save();
       ctx.setTransform(dpr * v.s, 0, 0, dpr * v.s, dpr * v.tx, dpr * v.ty);
-      for (const t of it.labels) drawText(ctx, t, v, W, H, col, it.x - it.ox, it.y - it.oy);
+      const dr = it.r - it.or, c = Math.cos(dr), sn = Math.sin(dr);
+      for (const t of it.labels) {
+        const ax = t.x - it.ox, ay = t.y - it.oy;
+        drawText(ctx, t, v, W, H, col, it.x + c * ax - sn * ay - t.x, it.y + sn * ax + c * ay - t.y);
+      }
       ctx.restore();
     }
     if (showChg && (moved || it.added)) {
@@ -234,6 +239,7 @@ function moveItemDrag(p) {
 }
 function endItemDrag() {
   const it = gest.item;
+  gest.type = 'end';
   delete it.snap;
   if (it.added) { it.ox = it.x; it.oy = it.y; it.or = it.r; }
   commitItem(it); save(); updateEqBar(); req();
@@ -419,8 +425,7 @@ function eqChanges() {
     if (it.del) { deleted.add(it.idx); it.labels.forEach(t => textDeletes.add(t.rec)); continue; }
     if (isMoved(it)) {
       moved.set(it.idx, { x: it.x, y: it.y, r: it.r });
-      const dx = it.x - it.ox, dy = it.y - it.oy;
-      if (Math.abs(dx) + Math.abs(dy) > 1e-9) it.labels.forEach(t => textMoves.set(t.rec, { dx, dy }));
+      it.labels.forEach(t => textMoves.set(t.rec, { ox: it.ox, oy: it.oy, nx: it.x, ny: it.y, dr: it.r - it.or }));
     }
   }
   const added = P.eq.added.map(a => ({ ...a }));

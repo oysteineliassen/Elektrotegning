@@ -114,7 +114,7 @@
           blocks.set(curBlock.name, curBlock);
         } else if (r.type === 'ENDBLK') curBlock = null;
         else if (curBlock) curBlock.ents.push(r);
-      } else if (section === 'ENTITIES') ents.push(r);
+      } else if (section === 'ENTITIES') { if (num(r, 67, 0) !== 1) ents.push(r); }
     }
 
     const layerIdx = new Map(), layerList = [];
@@ -562,12 +562,14 @@
     }
     if (changes.textDeletes) for (const rec of changes.textDeletes) reps.push({ ln: rec.ln, lnEnd: rec.lnEnd, out: [] });
     if (changes.textMoves) for (const [rec, mv] of changes.textMoves) {
-      const p = recPairs(rec);
+      // mv: {ox, oy, nx, ny, dr} i appens koordinater (y ned): p' = n + R(dr)(p - o)
+      const p = recPairs(rec), c = Math.cos(mv.dr || 0), s = Math.sin(mv.dr || 0);
       for (const [cx, cy] of [[10, 20], [11, 21]]) {
         const ix = p.findIndex(q => q[0] === cx), iy = p.findIndex(q => q[0] === cy);
         if (ix < 0 || iy < 0) continue;
         if (cx === 11 && rec.type === 'MTEXT') continue; // retningsvektor
-        p[ix][1] = fmtN(parseFloat(p[ix][1]) + mv.dx); p[iy][1] = fmtN(parseFloat(p[iy][1]) - mv.dy);
+        const ax = parseFloat(p[ix][1]) - mv.ox, ay = -parseFloat(p[iy][1]) - mv.oy;
+        p[ix][1] = fmtN(mv.nx + c * ax - s * ay); p[iy][1] = fmtN(-(mv.ny + s * ax + c * ay));
       }
       reps.push({ ln: rec.ln, lnEnd: rec.lnEnd, out: emit(rec.type, p) });
     }
