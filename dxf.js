@@ -74,7 +74,7 @@
     const layers = new Map();
     const blocks = new Map();
     const ents = [];
-    let insunits = 0, handseedLn = -1, entEndLn = -1;
+    let insunits = 0, handseedLn = -1, entEndLn = -1, blocksEndLn = -1, brEndLn = -1, brTable = null, curTable = null;
     let section = null, curBlock = null;
 
     for (let i = 0; i < recs.length; i++) {
@@ -101,9 +101,11 @@
         }
         continue;
       }
-      if (r.type === 'ENDSEC') { if (section === 'ENTITIES') entEndLn = r.ln; section = null; continue; }
+      if (r.type === 'ENDSEC') { if (section === 'ENTITIES') entEndLn = r.ln; if (section === 'BLOCKS') blocksEndLn = r.ln; section = null; continue; }
       if (r.type === 'EOF') break;
       if (section === 'TABLES') {
+        if (r.type === 'TABLE') { curTable = str(r, 2, ''); if (curTable === 'BLOCK_RECORD') brTable = str(r, 5, null); }
+        if (r.type === 'ENDTAB' && curTable === 'BLOCK_RECORD') brEndLn = r.ln;
         if (r.type === 'LAYER') {
           const name = str(r, 2, '0');
           layers.set(name, { name, color: Math.abs(num(r, 62, 7)), off: num(r, 62, 7) < 0 || (num(r, 70, 0) & 1) === 1 });
@@ -467,7 +469,7 @@
     return {
       segs, texts: W.texts, fills: W.fills, layers: layerList, insunits, bounds,
       inserts, blockGeom, blockNames: [...blocks.keys()].filter(n => !n.startsWith('*')),
-      _src: { lines, handseedLn, entEndLn }
+      _src: { lines, handseedLn, entEndLn, blocksEndLn, brEndLn, brTable }
     };
   }
 
@@ -591,6 +593,8 @@
         const h = newHandle();
         const p = [];
         if (h) p.push([5, h]);
+        const own = parsed.inserts.length ? get(parsed.inserts[0].rec, 330, null) : null;
+        if (h && own) p.push([330, own]);
         p.push([100, 'AcDbEntity'], [8, a.layer || '0'], [100, 'AcDbBlockReference'], [2, a.block],
           [10, fmtN(d.x)], [20, fmtN(d.y)], [30, '0'], [41, fmtN(a.sx || 1)], [42, fmtN(a.sy || 1)], [43, '1'], [50, fmtN(d.deg)]);
         addOut = addOut.concat(emit('INSERT', p));
@@ -621,6 +625,23 @@
     }
     if (addOut.length && src.entEndLn >= 0) reps.push({ ln: src.entEndLn, lnEnd: src.entEndLn, out: addOut });
 
+    // nye blokkdefinisjoner (bibliotekssymboler)
+    if (changes.newBlocks && changes.newBlocks.length && src.blocksEndLn >= 0) {
+      let brOut = [], blkOut = [];
+      for (const b of changes.newBlocks) {
+        const hr = newHandle();
+        if (hr && src.brEndLn >= 0) {
+          brOut = brOut.concat(emit('BLOCK_RECORD', [[5, hr], [330, src.brTable || '0'], [100, 'AcDbSymbolTableRecord'], [100, 'AcDbBlockTableRecord'], [2, b.name], [340, '0'], [70, '0'], [280, '1'], [281, '0']]));
+        }
+        const hb = newHandle(), own = hr ? [[330, hr]] : [];
+        const H = () => { const h = newHandle(); return h ? [[5, h]].concat(own) : []; };
+        blkOut = blkOut.concat(emit('BLOCK', (hb ? [[5, hb]] : []).concat(own, [[100, 'AcDbEntity'], [8, '0'], [100, 'AcDbBlockBegin'], [2, b.name], [70, '0'], [10, '0'], [20, '0'], [30, '0'], [3, b.name], [1, '']])));
+        for (const e of b.ents) blkOut = blkOut.concat(emit(e.type, H().concat(e.pairs)));
+        blkOut = blkOut.concat(emit('ENDBLK', H().concat([[100, 'AcDbEntity'], [8, '0'], [100, 'AcDbBlockEnd']])));
+      }
+      if (brOut.length) reps.push({ ln: src.brEndLn, lnEnd: src.brEndLn, out: brOut });
+      reps.push({ ln: src.blocksEndLn, lnEnd: src.blocksEndLn, out: blkOut });
+    }
     reps.sort((a, b) => b.ln - a.ln || b.lnEnd - a.lnEnd);
     for (const r of reps) lines.splice(r.ln, r.lnEnd - r.ln, ...r.out);
     if (seed >= 0 && src.handseedLn >= 0) {

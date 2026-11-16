@@ -7,6 +7,46 @@ const EQ = { items: [], info: {} };
 let eqSel = null, eqArm = null;
 let eqTool = 'sel', runStart = null, runSel = null;
 
+/* ---------- Symbolbibliotek (blokker som ikke finnes i tegningen) ----------
+   Koordinater i mm, y opp, veggen i origo og symbolet ut fra veggen (+y) – som E_BRYTER. */
+const LIB = [
+  { name: 'E_DIMMER', like: /bryter|switch/i, ents: [
+    { t: 'L', a: [0, 0], b: [0, 50] }, { t: 'C', c: [0, 100], r: 50 },
+    { t: 'L', a: [30, 140], b: [75, 240] }, { t: 'L', a: [75, 240], b: [135, 205] },
+    { t: 'P', pts: [[20, 210], [20, 168], [100, 172]], closed: true }] },
+  { name: 'E_TERMOSTAT', like: /bryter|switch/i, ents: [
+    { t: 'L', a: [0, 0], b: [0, 40] },
+    { t: 'P', pts: [[-75, 40], [75, 40], [75, 190], [-75, 190]], closed: true },
+    { t: 'T', p: [0, 115], h: 60, s: '°C' }] }
+];
+const f6 = v => String(Math.round(v * 1e6) / 1e6);
+function libPairs(e) {
+  if (e.t === 'L') return { type: 'LINE', pairs: [[100, 'AcDbEntity'], [8, '0'], [100, 'AcDbLine'], [10, f6(e.a[0])], [20, f6(e.a[1])], [30, '0'], [11, f6(e.b[0])], [21, f6(e.b[1])], [31, '0']] };
+  if (e.t === 'C') return { type: 'CIRCLE', pairs: [[100, 'AcDbEntity'], [8, '0'], [100, 'AcDbCircle'], [10, f6(e.c[0])], [20, f6(e.c[1])], [30, '0'], [40, f6(e.r)]] };
+  if (e.t === 'P') {
+    const p = [[100, 'AcDbEntity'], [8, '0'], [100, 'AcDbPolyline'], [90, String(e.pts.length)], [70, e.closed ? '1' : '0']];
+    for (const q of e.pts) p.push([10, f6(q[0])], [20, f6(q[1])]);
+    return { type: 'LWPOLYLINE', pairs: p };
+  }
+  return { type: 'TEXT', pairs: [[100, 'AcDbEntity'], [8, '0'], [100, 'AcDbText'], [10, f6(e.p[0])], [20, f6(e.p[1])], [30, '0'], [40, f6(e.h)], [1, e.s], [72, '1'], [11, f6(e.p[0])], [21, f6(e.p[1])], [31, '0'], [100, 'AcDbText'], [73, '2']] };
+}
+let LIBP = null;
+function libGeom(name) {
+  if (!LIB.some(b => b.name === name)) return null;
+  if (!LIBP) {
+    const L = ['0', 'SECTION', '2', 'BLOCKS'];
+    for (const b of LIB) {
+      L.push('0', 'BLOCK', '2', b.name, '10', '0', '20', '0');
+      for (const e of b.ents) { const q = libPairs(e); L.push('0', q.type); for (const [c, v] of q.pairs) L.push(String(c), v); }
+      L.push('0', 'ENDBLK');
+    }
+    L.push('0', 'ENDSEC', '0', 'EOF');
+    LIBP = DXF.parseDXF(L.join('\n'));
+  }
+  return LIBP.blockGeom(name);
+}
+function libDef(name) { return LIB.find(b => b.name === name); }
+
 function eqActive() { return edMode === 'utstyr' && doc && doc.kind === 'dxf'; }
 
 /* ---------- Oppbygging ---------- */
@@ -28,12 +68,12 @@ function buildItems() {
     EQ.items.push({
       key: 'i' + ins.idx, idx: ins.idx, block: ins.block, layer: ins.layer, li: ins.li,
       ox: ins.x, oy: ins.y, or: ins.r, sx: ins.sx, sy: ins.sy,
-      x: e.x ?? ins.x, y: e.y ?? ins.y, r: e.r ?? ins.r, del: !!e.del, added: false, labels: []
+      x: e.x ?? ins.x, y: e.y ?? ins.y, r: e.r ?? ins.r, del: !!e.del, added: false, labels: [], stackOn: e.stackOn || null
     });
   }
   for (const a of P.eq.added) {
     EQ.items.push({ key: 'a' + a.id, id: a.id, idx: null, block: a.block, layer: a.layer, li: Math.max(0, layerIndex(a.layer)),
-      x: a.x, y: a.y, r: a.r, ox: a.x, oy: a.y, or: a.r, sx: a.sx || 1, sy: a.sy || 1, tmpl: a.tmpl, del: false, added: true, labels: [] });
+      x: a.x, y: a.y, r: a.r, ox: a.x, oy: a.y, or: a.r, sx: a.sx || 1, sy: a.sy || 1, tmpl: a.tmpl, del: false, added: true, labels: [], stackOn: a.stackOn || null });
   }
   // knytt løse tekster (f.eks. «o/benk», «?») til nærmeste utstyr
   const orig = EQ.items.filter(i => !i.added), lim = 700 / mpu;
@@ -63,6 +103,7 @@ function buildItems() {
     }
   }
   P.eq.runs = P.eq.runs || [];
+  resolveStacks();
 }
 function countable(block) { return !!(EQ.num && EQ.num[block]) || /stikk|socket|uttak/i.test(block); }
 function defaultN(block) {
@@ -111,10 +152,11 @@ function learnBlocks() {
   }
 }
 function infoOf(block) {
+  if (!EQ.info[block] && libDef(block)) EQ.info[block] = { wall: true, local: Math.PI / 2, off: 0 };
   return EQ.info[block] || (EQ.info[block] = { wall: WALLMOUNT_RE.test(block), local: Math.PI / 2, off: 0 });
 }
 function isMoved(it) { return !it.added && (Math.abs(it.x - it.ox) > 1e-6 || Math.abs(it.y - it.oy) > 1e-6 || Math.abs(it.r - it.or) > 1e-6); }
-function isChanged(it) { return isMoved(it) || (!it.added && it.n !== it.n0); }
+function isChanged(it) { return isMoved(it) || (!it.added && (it.n !== it.n0 || !!it.stackOn)); }
 function changeCount() { return EQ.items.filter(i => i.added || i.del || isChanged(i)).length + (P.eq.runs || []).length; }
 
 /* ---------- Plassering med vegg-magnet ---------- */
@@ -131,8 +173,8 @@ function placeItem(it, ux, uy) {
 function commitItem(it) {
   if (it.added) {
     const a = P.eq.added.find(q => q.id === it.id);
-    if (a) Object.assign(a, { x: it.x, y: it.y, r: it.r, n: it.n });
-  } else if (it.del || isChanged(it)) P.eq.edits[it.idx] = { x: it.x, y: it.y, r: it.r, del: it.del || undefined, n: it.n !== it.n0 ? it.n : undefined };
+    if (a) Object.assign(a, { x: it.x, y: it.y, r: it.r, n: it.n, stackOn: it.stackOn || undefined });
+  } else if (it.del || isChanged(it)) P.eq.edits[it.idx] = { x: it.x, y: it.y, r: it.r, del: it.del || undefined, n: it.n !== it.n0 ? it.n : undefined, stackOn: it.stackOn || undefined };
   else delete P.eq.edits[it.idx];
 }
 
@@ -265,13 +307,19 @@ function templateFor(block) {
   const ins = doc.r.inserts.find(i => i.block === block && doc.eqIns[i.idx]) || doc.r.inserts.find(i => i.block === block);
   return ins || null;
 }
+// for bibliotekssymboler: et innsatt symbol av lignende type (lag, skala, retning)
+function likeFor(block) {
+  const d = libDef(block);
+  if (!d) return null;
+  return doc.r.inserts.find(i => doc.eqIns[i.idx] && d.like.test(i.block)) || null;
+}
 function addItem(block, u) {
   pushUndo();
-  const t = templateFor(block);
-  const layer = t ? t.layer : (doc.r.layers.find((l, i) => doc.equip[i]) || { name: '0' }).name;
+  const t = templateFor(block), like = t || likeFor(block);
+  const layer = like ? like.layer : (doc.r.layers.find((l, i) => doc.equip[i]) || { name: '0' }).name;
   const id = uid();
   const it = { key: 'a' + id, id, idx: null, added: true, block, layer, li: Math.max(0, layerIndex(layer)),
-    x: u.x, y: u.y, r: t ? t.r : 0, sx: t ? t.sx : 1, sy: t ? t.sy : 1, tmpl: t ? t.idx : null, del: false, labels: [], numLabel: null };
+    x: u.x, y: u.y, r: like ? like.r : 0, sx: like ? like.sx : 1, sy: like ? like.sy : 1, tmpl: t ? t.idx : null, del: false, labels: [], numLabel: null };
   it.n = it.n0 = defaultN(block);
   placeItem(it, u.x, u.y);
   it.ox = it.x; it.oy = it.y; it.or = it.r;
@@ -282,6 +330,58 @@ function addItem(block, u) {
   return it;
 }
 
+/* ---------- Stabling (flere symboler over hverandre på samme sted) ---------- */
+function commitAll() { for (const it of EQ.items) commitItem(it); }
+function stackH(it) {
+  const g = doc.geom(it.block), info = infoOf(it.block), mpu = P.mmPerUnit || 1;
+  if (!g) return 200 / mpu;
+  const a = info.local + Math.PI, ux = Math.cos(a), uy = Math.sin(a), band = 85 / mpu;
+  let h = 0;
+  for (let k = 0; k < g.pts.length; k += 2) {
+    const x = g.pts[k], y = g.pts[k + 1];
+    if (Math.abs(-uy * x + ux * y) <= band) h = Math.max(h, ux * x + uy * y);
+  }
+  return h * Math.abs(it.sx || 1) + 18 / mpu;
+}
+function above(it) { return EQ.items.filter(q => q.stackOn === it.key && !q.del); }
+function chainUp(it) { const out = []; let cur = above(it); while (cur.length) { out.push(...cur); cur = cur.flatMap(above); } return out; }
+function topOf(it, skip) { let t = it; for (let i = 0; i < 20; i++) { const a = above(t).filter(q => q !== skip); if (!a.length) break; t = a[0]; } return t; }
+function resolveStacks() {
+  const by = new Map(EQ.items.map(i => [i.key, i]));
+  for (let pass = 0; pass < 12; pass++) {
+    for (const it of EQ.items) {
+      if (!it.stackOn) continue;
+      const b = by.get(it.stackOn);
+      if (!b || b.del || b === it) { it.stackOn = null; continue; }
+      const ib = infoOf(b.block), ii = infoOf(it.block), a = b.r + ib.local + Math.PI, h = stackH(b);
+      it.x = b.x + Math.cos(a) * h; it.y = b.y + Math.sin(a) * h; it.r = b.r + ib.local - ii.local;
+    }
+  }
+}
+// ta symbolet ut av stabelen; de over flyttes ned
+function unstack(it) {
+  const up = above(it);
+  for (const a of up) {
+    a.stackOn = it.stackOn;
+    if (!it.stackOn) { a.x = it.x; a.y = it.y; a.r = it.r + infoOf(it.block).local - infoOf(a.block).local; }
+  }
+  it.stackOn = null;
+  resolveStacks();
+}
+function swapDown(it) {
+  let lower, upper;
+  if (it.stackOn) { lower = EQ.items.find(q => q.key === it.stackOn); upper = it; }
+  else { lower = it; upper = above(it)[0]; }
+  if (!lower || !upper) return;
+  const upAbove = above(upper);
+  upper.stackOn = lower.stackOn;
+  if (!lower.stackOn) { upper.x = lower.x; upper.y = lower.y; upper.r = lower.r + infoOf(lower.block).local - infoOf(upper.block).local; }
+  for (const a of upAbove) a.stackOn = lower.key;
+  lower.stackOn = upper.key;
+  resolveStacks();
+}
+function inStack(it) { return !!it.stackOn || above(it).length > 0; }
+
 /* ---------- Dra ---------- */
 function startItemDrag(it, x, y) {
   if (!gest || gest.type !== 'pending') return;
@@ -291,13 +391,34 @@ function startItemDrag(it, x, y) {
   gest.off = { x: s.x - x, y: s.y - y };
   gest.item = it;
   it.snap = -1;
+  if (it.stackOn) unstack(it);
+  gest.chain = new Set(chainUp(it).map(q => q.key));
+  gest.stackTo = null;
   eqSel = it.key; updateEqBar();
   try { navigator.vibrate && navigator.vibrate(15); } catch (e) { }
   req();
 }
 function moveItemDrag(p) {
   const it = gest.item, u = toUnit(p.x + gest.off.x, p.y + gest.off.y);
-  placeItem(it, u.x, u.y);
+  // slipp oppå et annet veggsymbol = stable
+  let target = null;
+  if (infoOf(it.block).wall) {
+    let bd = 28;
+    for (const q of EQ.items) {
+      if (q === it || q.del || gest.chain.has(q.key) || !infoOf(q.block).wall || !doc.show[q.li]) continue;
+      const c = itemCenter(q), d = Math.hypot(c.x * view.s + view.tx - p.x, c.y * view.s + view.ty - p.y);
+      if (d < bd) { bd = d; target = q; }
+    }
+  }
+  if (target) {
+    const top = topOf(target, it);
+    if (it.stackOn !== top.key) { try { navigator.vibrate && navigator.vibrate([10, 40, 10]); } catch (e) { } }
+    it.stackOn = top.key; gest.stackTo = top;
+  } else {
+    it.stackOn = null; gest.stackTo = null;
+    placeItem(it, u.x, u.y);
+  }
+  resolveStacks();
   req();
 }
 function endItemDrag() {
@@ -305,7 +426,8 @@ function endItemDrag() {
   gest.type = 'end';
   delete it.snap;
   if (it.added) { it.ox = it.x; it.oy = it.y; it.or = it.r; }
-  commitItem(it); save(); updateEqBar(); req();
+  if (gest.stackTo) toast('Stablet');
+  commitAll(); save(); updateEqBar(); updateTitle(); req();
 }
 
 /* ---------- Handlingslinje for valgt symbol / føring ---------- */
@@ -319,7 +441,8 @@ function updateEqBar() {
   if (run) html = `<b>Føring</b><button data-a="rflip" title="Bøy andre veien">⇅</button><button data-a="rbend" title="Mer/mindre bue">⌒</button><button data-a="rdel" title="Slett">🗑</button>`;
   else html = `<b>${esc(prettyBlock(it.block))}${it.added ? ' · ny' : isMoved(it) ? ' · flyttet' : ''}</b>`
     + (countable(it.block) ? `<button class="num" data-a="n" title="Antall uttak">${it.n}×</button>` : '')
-    + `<button data-a="rot" title="Roter 90°">⟳</button><button data-a="flip" title="Snu til andre siden av veggen">⇅</button><button data-a="dup" title="Kopier">⧉</button>`
+    + (inStack(it) ? `<button data-a="swap" title="Bytt plass i stabelen">⇵</button>` : `<button data-a="rot" title="Roter 90°">⟳</button><button data-a="flip" title="Snu til andre siden av veggen">⇅</button>`)
+    + `<button data-a="dup" title="Kopier">⧉</button>`
     + (isMoved(it) ? `<button data-a="reset" title="Tilbake til prosjektert">↺</button>` : '')
     + `<button data-a="del" title="Slett">🗑</button>`;
   if (bar.dataset.k !== html) {
@@ -370,6 +493,7 @@ function eqAction(a) {
   if (!it) return;
   const mpu = P.mmPerUnit || 1;
   if (a === 'n') { if ($('#npick').classList.contains('on')) $('#npick').classList.remove('on'); else openNPick(it); return; }
+  if (a === 'swap') { pushUndo(); swapDown(it); commitAll(); save(); updateEqBar(); req(); return; }
   if (a === 'rot') { pushUndo(); it.r += Math.PI / 2; }
   else if (a === 'flip') {
     pushUndo();
@@ -396,14 +520,16 @@ function eqAction(a) {
     n.ox = n.x; n.oy = n.y; n.or = n.r; commitItem(n);
     toast('Kopi lagt til – hold inne for å flytte den');
   }
-  else if (a === 'reset') { pushUndo(); it.x = it.ox; it.y = it.oy; it.r = it.or; }
+  else if (a === 'reset') { pushUndo(); if (it.stackOn) unstack(it); it.x = it.ox; it.y = it.oy; it.r = it.or; }
   else if (a === 'del') {
     pushUndo();
+    if (inStack(it)) { unstack(it); commitAll(); }
     if (it.added) { P.eq.added = P.eq.added.filter(q => q.id !== it.id); EQ.items = EQ.items.filter(q => q !== it); }
     else it.del = true;
     eqSel = null;
   }
   if (a !== 'dup' && EQ.items.includes(it)) commitItem(it);
+  resolveStacks(); commitAll();
   save(); updateEqBar(); updateTitle(); req();
 }
 
@@ -518,7 +644,13 @@ function paletteBlocks() {
   const cnt = new Map();
   for (const it of EQ.items) if (!it.added) cnt.set(it.block, (cnt.get(it.block) || 0) + 1);
   for (const n of doc.r.blockNames) if (!cnt.has(n) && EQ_RE.test(n)) cnt.set(n, 0);
-  return [...cnt.entries()].sort((a, b) => b[1] - a[1]).map(e => e[0]);
+  const list = [...cnt.entries()].sort((a, b) => b[1] - a[1]).map(e => e[0]);
+  for (const b of LIB) {
+    if (list.includes(b.name)) continue;
+    const i = list.findIndex(n => b.like.test(n));
+    list.splice(i >= 0 ? i + 1 : list.length, 0, b.name);
+  }
+  return list;
 }
 function buildPalette() {
   const el = $('#pal');
@@ -529,7 +661,7 @@ function buildPalette() {
     const name = b.dataset.b, g = doc.geom(name), c = $('canvas', b).getContext('2d');
     if (g) {
       const bb = g.bbox, w = bb.x1 - bb.x0 || 1, h = bb.y1 - bb.y0 || 1, s = 70 / Math.max(w, h);
-      const t = templateFor(name), col = t ? aci(doc.r.layers[t.li].color) : '#111';
+      const t = templateFor(name) || likeFor(name), col = t ? aci(doc.r.layers[t.li].color) : '#111';
       c.setTransform(s, 0, 0, s, 44 - (bb.x0 + w / 2) * s, 44 - (bb.y0 + h / 2) * s);
       c.strokeStyle = col; c.lineWidth = 3.2 / s; c.lineCap = 'round';
       if (g.fill) { c.fillStyle = col; c.fill(g.fill, 'evenodd'); }
@@ -560,7 +692,7 @@ function palPointer(btn, name) {
     if (!st.drag && dy < -14 && Math.abs(dy) > Math.abs(dx) * 0.6) {
       st.drag = true;
       try { btn.setPointerCapture(e.pointerId); } catch (er) { }
-      const t = templateFor(name);
+      const t = templateFor(name) || likeFor(name);
       palDrag = { key: 'drag', block: name, layer: t ? t.layer : '0', li: t ? t.li : 0, x: 0, y: 0, r: t ? t.r : 0, sx: t ? t.sx : 1, sy: t ? t.sy : 1, labels: [], added: true, snap: -1 };
       try { navigator.vibrate && navigator.vibrate(10); } catch (er) { }
     }
@@ -649,7 +781,13 @@ function eqChanges() {
     addedRaw.push({ type: 'LWPOLYLINE', pairs: [[100, 'AcDbEntity'], [8, layer], [6, 'Continuous'], [100, 'AcDbPolyline'], [90, '2'], [70, '0'],
       [10, f(g.p1.x)], [20, f(-g.p1.y)], [42, f(-run.bu)], [10, f(g.p2.x)], [20, f(-g.p2.y)]] });
   }
-  return { moved, deleted, added, textMoves, textDeletes, textEdits, addedTexts, addedRaw };
+  const newBlocks = [];
+  for (const it of EQ.items) {
+    if (!it.added || it.del || doc.r.blockNames.includes(it.block) || newBlocks.some(b => b.name === it.block)) continue;
+    const d = libDef(it.block);
+    if (d) newBlocks.push({ name: d.name, ents: d.ents.map(libPairs) });
+  }
+  return { moved, deleted, added, textMoves, textDeletes, textEdits, addedTexts, addedRaw, newBlocks };
 }
 async function exportDxf() {
   try {

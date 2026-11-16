@@ -17,3 +17,5 @@ DWG: lagre som DXF i AutoCAD LT først.
 - Meny → **Eksporter DXF (som bygget)** gir en DXF med endringene, klar til plotting i AutoCAD.
 - **Antall uttak**: trykk på en stikkontakt → knappen «2×» → velg 1–6. Tallet ved symbolet oppdateres (og eksporteres).
 - **Føringer (skjult anlegg)**: trykk 〰, trykk på punktene etter hverandre → buet strek mellom dem. Trykk på en strek for å bøye den andre veien (⇅), endre buen (⌒) eller slette. Eksporteres som buede polylinjer på føringslaget.
+- **Dimmer og termostat** ligger i paletten (E_DIMMER, E_TERMOSTAT). Blokkdefinisjonene legges inn i DXF-en ved eksport.
+- **Stabling**: dra et veggsymbol oppå et annet → de stables utover fra veggen på felles stamme og flyttes samlet. ⇵ bytter rekkefølge. Dra et symbol ut av stabelen for å løsne det.

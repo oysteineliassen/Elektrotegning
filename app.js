@@ -196,14 +196,16 @@ class DxfDoc {
   geom(name) {
     let g = this.gcache.get(name);
     if (g) return g;
-    const bg = this.r.blockGeom(name);
+    const bg = this.r.blockGeom(name) || (typeof libGeom === 'function' ? libGeom(name) : null);
     if (!bg) return null;
     const s = bg.segs, path = new Path2D();
     for (let k = 0; k < s.x1.length; k++) { path.moveTo(s.x1[k], s.y1[k]); path.lineTo(s.x2[k], s.y2[k]); }
     let fill = null;
     for (const f of s.fills) { fill = fill || new Path2D(); for (const lp of f.loops) { lp.forEach((q, i) => i ? fill.lineTo(q[0], q[1]) : fill.moveTo(q[0], q[1])); fill.closePath(); } }
     const b = bg.bbox;
-    g = { path, fill, texts: s.texts, bbox: b, cx: (b.x0 + b.x1) / 2, cy: (b.y0 + b.y1) / 2, rad: Math.hypot(b.x1 - b.x0, b.y1 - b.y0) / 2 };
+    const pts = [];
+    for (let k = 0; k < s.x1.length; k++) pts.push(s.x1[k], s.y1[k], s.x2[k], s.y2[k]);
+    g = { path, fill, texts: s.texts, bbox: b, pts, cx: (b.x0 + b.x1) / 2, cy: (b.y0 + b.y1) / 2, rad: Math.hypot(b.x1 - b.x0, b.y1 - b.y0) / 2 };
     this.gcache.set(name, g);
     return g;
   }
