@@ -1,7 +1,7 @@
 {
-  "name": "Takpunkter",
-  "short_name": "Takpunkter",
-  "description": "Plasser downlights på plantegning og få mål til nærmeste vegg.",
+  "name": "Elektrotegning",
+  "short_name": "Elektrotegning",
+  "description": "Elektrotegning på plantegninger. Plasser downlights på plantegning og få mål til nærmeste vegg.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

@@ -1,4 +1,4 @@
-# Takpunkter
+# Elektrotegning
 
 PWA for å plassere downlights (og annet elektroutstyr) på en plantegning (PDF eller DXF) og se mål til nærmeste vegg i X og Y.
 
