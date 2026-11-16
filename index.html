@@ -129,6 +129,29 @@
     box-shadow: 0 6px 20px rgba(0,0,0,.3); opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 30; max-width: 90vw; text-align: center; }
   #toast.on { opacity: 1; }
   #fileIn { display: none; }
+  #modeSeg { display: none; gap: 6px; padding: 6px 8px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  #modeSeg.on { display: flex; }
+  #modeSeg button { flex: 1; padding: 7px; border-radius: 999px; font-size: 14px; }
+  #modeSeg button.on { background: #fff; color: #111; border-color: #fff; font-weight: 600; }
+  #pal, #chgBtn { display: none; }
+  #tools.eq #chips, #tools.eq #placeBtn { display: none; }
+  #tools.eq #pal { display: flex; }
+  #tools.eq #chgBtn { display: block; }
+  #pal { flex: 1; gap: 6px; overflow-x: auto; scrollbar-width: none; touch-action: pan-x; }
+  #pal::-webkit-scrollbar { display: none; }
+  .pchip { flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 6px; min-width: 64px; max-width: 86px;
+    border-radius: 12px; background: #fff; color: #111; border: 2px solid transparent; touch-action: pan-x; user-select: none; -webkit-user-select: none; }
+  .pchip canvas { width: 44px; height: 44px; pointer-events: none; }
+  .pchip span { font-size: 11px; line-height: 1.15; max-width: 78px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
+  .pchip.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+  .paltip { color: var(--muted); font-size: 13px; padding: 8px; }
+  #chgBtn { flex: none; width: 42px; height: 40px; padding: 0; border-radius: 999px; font-size: 17px; opacity: .55; }
+  #chgBtn.on { opacity: 1; background: #fff; color: #111; }
+  #eqbar { position: absolute; display: none; align-items: center; gap: 4px; padding: 5px 6px 5px 12px; background: #111827; color: #fff;
+    border-radius: 999px; box-shadow: 0 6px 20px rgba(0,0,0,.35); z-index: 3; white-space: nowrap; }
+  #eqbar.on { display: flex; }
+  #eqbar b { font-size: 13px; font-weight: 600; margin-right: 4px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+  #eqbar button { width: 38px; height: 38px; padding: 0; border-radius: 999px; background: #273244; border: none; font-size: 17px; }
 </style>
 </head>
 <body>
@@ -156,8 +179,10 @@
     <button class="ib" id="listBtn" aria-label="Punktliste">☰</button>
     <button class="ib" id="menuBtn" aria-label="Meny">⋯</button>
   </div>
+  <div id="modeSeg"><button data-m="mal" class="on">📏 Takpunkter</button><button data-m="utstyr">🔌 Utstyr</button></div>
   <div id="stage">
     <canvas id="cv"></canvas>
+    <div id="eqbar"><b id="eqName"></b><button data-a="rot" title="Roter 90°">⟳</button><button data-a="flip" title="Snu til andre siden av veggen">⇅</button><button data-a="dup" title="Kopier">⧉</button><button data-a="reset" id="eqReset" title="Tilbake til prosjektert">↺</button><button data-a="del" title="Slett">🗑</button></div>
     <div id="banner"><span id="bannerTxt"></span><button id="bannerBtn">Avbryt</button></div>
     <div id="loading">Laster tegning …</div>
   </div>
@@ -175,6 +200,8 @@
   <div id="tools">
     <div id="chips"></div>
     <button id="placeBtn" class="on">＋ Plasser</button>
+    <div id="pal"></div>
+    <button id="chgBtn" class="on" aria-label="Vis endringer">👁</button>
     <button id="undoBtn" aria-label="Angre">↶</button>
   </div>
 </section>
@@ -186,5 +213,6 @@
 <script src="vendor/pdf.min.js"></script>
 <script src="dxf.js"></script>
 <script src="app.js"></script>
+<script src="eq.js"></script>
 </body>
 </html>

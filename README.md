@@ -8,3 +8,10 @@ PWA for å plassere downlights (og annet elektroutstyr) på en plantegning (PDF 
 - Alt lagres lokalt på enheten (IndexedDB) og virker offline
 
 DWG: lagre som DXF i AutoCAD LT først.
+
+## Utstyr (installasjonstegning) – DXF
+- Bytt til **Utstyr** øverst. Symboler (blokker) på utstyrslag kan flyttes, kopieres, roteres og slettes.
+- **Hold inne og dra**: veggmonterte symboler (stikk, brytere …) fester seg til nærmeste vegg og roteres automatisk. Appen lærer retningen fra hvordan blokkene står i den opprinnelige tegningen.
+- **Nytt utstyr**: dra et symbol opp fra paletten nederst, eller trykk på det og så på tegningen.
+- Endringer vises mot prosjektert (stiplet original + strek). 👁 slår visningen av/på.
+- Meny → **Eksporter DXF (som bygget)** gir en DXF med endringene, klar til plotting i AutoCAD.

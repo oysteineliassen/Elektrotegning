@@ -1,5 +1,5 @@
-const CACHE = 'elektrotegning-v1';
-const FILES = ['./', './index.html', './app.js', './dxf.js', './manifest.webmanifest',
+const CACHE = 'elektrotegning-v2';
+const FILES = ['./', './index.html', './app.js', './dxf.js', './eq.js', './manifest.webmanifest',
   './vendor/pdf.min.js', './vendor/pdf.worker.min.js', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
