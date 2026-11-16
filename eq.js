@@ -17,8 +17,26 @@ const LIB = [
   { name: 'E_TERMOSTAT', like: /bryter|switch/i, ents: [
     { t: 'L', a: [0, 0], b: [0, 40] },
     { t: 'P', pts: [[-75, 40], [75, 40], [75, 190], [-75, 190]], closed: true },
-    { t: 'T', p: [0, 115], h: 60, s: '°C' }] }
+    { t: 'T', p: [0, 115], h: 60, s: '°C' }] },
+  // takpunkter (sentrert, takmontert)
+  { name: 'E_DOWNLIGHT', like: /lys|light/i, ceil: true, ents: [{ t: 'C', c: [0, 0], r: 75 }, { t: 'L', a: [-53, -53], b: [53, 53] }, { t: 'L', a: [-53, 53], b: [53, -53] }] },
+  { name: 'E_SPOT', like: /lys|light/i, ceil: true, ents: [{ t: 'C', c: [0, 0], r: 55 }, { t: 'L', a: [-39, -39], b: [39, 39] }, { t: 'L', a: [-39, 39], b: [39, -39] }, { t: 'C', c: [0, 0], r: 14 }] },
+  { name: 'E_LAMPEPUNKT', like: /lys|light/i, ceil: true, ents: [{ t: 'C', c: [0, 0], r: 120 }, { t: 'L', a: [-85, -85], b: [85, 85] }, { t: 'L', a: [-85, 85], b: [85, -85] }] },
+  { name: 'E_ROYKVARSLER', like: /lys|light/i, ceil: true, ents: [{ t: 'C', c: [0, 0], r: 75 }, { t: 'T', p: [0, 0], h: 70, s: 'R' }] },
+  { name: 'E_HOYTTALER', like: /lys|light/i, ceil: true, ents: [{ t: 'C', c: [0, 0], r: 75 }, { t: 'T', p: [0, 0], h: 70, s: 'H' }] },
+  { name: 'E_KOBLINGSBOKS', like: /lys|light/i, ceil: true, ents: [{ t: 'P', pts: [[-60, -60], [60, -60], [60, 60], [-60, 60]], closed: true }, { t: 'C', c: [0, 0], r: 18 }] }
 ];
+const PT_BLOCK = { downlight: 'E_DOWNLIGHT', spot: 'E_SPOT', lampe: 'E_LAMPEPUNKT', royk: 'E_ROYKVARSLER', hoyttaler: 'E_HOYTTALER', boks: 'E_KOBLINGSBOKS' };
+// takpunkter som utstyr (vises uten mål i Utstyr-modus)
+function ptItems() {
+  if (!P || !P.points) return [];
+  const like = doc.r.inserts.find(i => doc.eqIns[i.idx] && /lys|light/i.test(i.block) && !/vegg/i.test(i.block));
+  const layer = like ? like.layer : (doc.r.layers.find((l, i) => doc.equip[i]) || { name: '0' }).name;
+  const li = Math.max(0, layerIndex(layer));
+  return P.points.map(p => ({ key: 'p' + p.id, pt: p, isPt: true, block: PT_BLOCK[p.type] || 'E_DOWNLIGHT', layer, li,
+    x: p.x, y: p.y, r: 0, ox: p.x, oy: p.y, or: 0, sx: 1, sy: 1, labels: [], n: 1, n0: 1, added: true, del: false, numLabel: null }));
+}
+function allItems() { return eqActive() || (doc && doc.kind === 'dxf') ? EQ.items.concat(ptItems()) : EQ.items; }
 const f6 = v => String(Math.round(v * 1e6) / 1e6);
 function libPairs(e) {
   if (e.t === 'L') return { type: 'LINE', pairs: [[100, 'AcDbEntity'], [8, '0'], [100, 'AcDbLine'], [10, f6(e.a[0])], [20, f6(e.a[1])], [30, '0'], [11, f6(e.b[0])], [21, f6(e.b[1])], [31, '0']] };
@@ -152,7 +170,7 @@ function learnBlocks() {
   }
 }
 function infoOf(block) {
-  if (!EQ.info[block] && libDef(block)) EQ.info[block] = { wall: true, local: Math.PI / 2, off: 0 };
+  if (!EQ.info[block] && libDef(block)) EQ.info[block] = { wall: !libDef(block).ceil, local: Math.PI / 2, off: 0 };
   return EQ.info[block] || (EQ.info[block] = { wall: WALLMOUNT_RE.test(block), local: Math.PI / 2, off: 0 });
 }
 function isMoved(it) { return !it.added && (Math.abs(it.x - it.ox) > 1e-6 || Math.abs(it.y - it.oy) > 1e-6 || Math.abs(it.r - it.or) > 1e-6); }
@@ -195,7 +213,8 @@ function drawEquip(ctx, v, dpr, o, W, H) {
   const L = doc.r.layers, k = o.k || 1;
   const showChg = !o.export && S.showChg !== false && edMode === 'utstyr';
   drawRuns(ctx, v, dpr, o);
-  for (const it of EQ.items) {
+  const list = edMode === 'utstyr' || o.export ? allItems() : EQ.items;
+  for (const it of list) {
     if (!doc.show[it.li]) continue;
     const g = doc.geom(it.block);
     if (!g) continue;
@@ -239,7 +258,7 @@ function drawEquip(ctx, v, dpr, o, W, H) {
       drawText(ctx, { ...EQ.num[it.block].t, x: q.x, y: q.y, s: String(it.n) }, v, W, H, col, 0, 0);
       ctx.restore();
     }
-    if (showChg && (moved || it.added || it.n !== it.n0)) {
+    if (showChg && !it.isPt && (moved || it.added || it.n !== it.n0)) {
       const c = itemCenter(it);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const sx = c.x * v.s + v.tx - Math.max(10, g.rad * v.s * 0.8), sy = c.y * v.s + v.ty - Math.max(10, g.rad * v.s * 0.8);
@@ -249,7 +268,7 @@ function drawEquip(ctx, v, dpr, o, W, H) {
     }
   }
   if (!o.export && edMode === 'utstyr' && runStart) {
-    const it = EQ.items.find(i => i.key === runStart);
+    const it = itemByKey(runStart);
     if (it) {
       const c = itemCenter(it);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -258,7 +277,7 @@ function drawEquip(ctx, v, dpr, o, W, H) {
     }
   }
   if (!o.export && edMode === 'utstyr' && eqSel) {
-    const it = EQ.items.find(i => i.key === eqSel);
+    const it = itemByKey(eqSel);
     if (it && !it.del) {
       const g = doc.geom(it.block), c = itemCenter(it);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -273,7 +292,7 @@ function drawEquip(ctx, v, dpr, o, W, H) {
 /* ---------- Treff og valg ---------- */
 function hitItem(x, y) {
   let best = null, bd = Infinity;
-  for (const it of EQ.items) {
+  for (const it of allItems()) {
     if (it.del || !doc.show[it.li]) continue;
     const g = doc.geom(it.block), c = itemCenter(it);
     const sx = c.x * view.s + view.tx, sy = c.y * view.s + view.ty;
@@ -392,7 +411,7 @@ function startItemDrag(it, x, y) {
   gest.item = it;
   it.snap = -1;
   if (it.stackOn) unstack(it);
-  gest.chain = new Set(chainUp(it).map(q => q.key));
+  gest.chain = new Set(it.isPt ? [] : chainUp(it).map(q => q.key));
   gest.stackTo = null;
   eqSel = it.key; updateEqBar();
   try { navigator.vibrate && navigator.vibrate(15); } catch (e) { }
@@ -418,6 +437,7 @@ function moveItemDrag(p) {
     it.stackOn = null; gest.stackTo = null;
     placeItem(it, u.x, u.y);
   }
+  if (it.isPt) { it.pt.x = it.x; it.pt.y = it.y; it.pt._d = null; }
   resolveStacks();
   req();
 }
@@ -435,10 +455,11 @@ function updateEqBar() {
   const bar = $('#eqbar');
   $('#npick').classList.remove('on');
   const run = runSel && (P.eq.runs || []).find(r => r.id === runSel);
-  const it = !run && eqSel && EQ.items.find(i => i.key === eqSel);
+  const it = !run && eqSel && itemByKey(eqSel);
   if (!eqActive() || (!run && (!it || it.del)) || (gest && gest.type === 'idrag')) { bar.classList.remove('on'); bar.dataset.k = ''; return; }
   let html;
-  if (run) html = `<b>Føring</b><button data-a="rflip" title="Bøy andre veien">⇅</button><button data-a="rbend" title="Mer/mindre bue">⌒</button><button data-a="rdel" title="Slett">🗑</button>`;
+  if (it && it.isPt) html = `<b>${esc((TYPES[it.pt.type] || TYPES.downlight).name)}</b><button data-a="del" title="Slett">🗑</button>`;
+  else if (run) html = `<b>Føring</b><button data-a="rflip" title="Bøy andre veien">⇅</button><button data-a="rbend" title="Mer/mindre bue">⌒</button><button data-a="rdel" title="Slett">🗑</button>`;
   else html = `<b>${esc(prettyBlock(it.block))}${it.added ? ' · ny' : isMoved(it) ? ' · flyttet' : ''}</b>`
     + (countable(it.block) ? `<button class="num" data-a="n" title="Antall uttak">${it.n}×</button>` : '')
     + (inStack(it) ? `<button data-a="swap" title="Bytt plass i stabelen">⇵</button>` : `<button data-a="rot" title="Roter 90°">⟳</button><button data-a="flip" title="Snu til andre siden av veggen">⇅</button>`)
@@ -455,7 +476,7 @@ function updateEqBar() {
 function selAnchor() {
   const run = runSel && (P.eq.runs || []).find(r => r.id === runSel);
   if (run) { const g = runGeom(run); return g ? { x: g.apex.x * view.s + view.tx, y: g.apex.y * view.s + view.ty, r: 14 } : null; }
-  const it = EQ.items.find(i => i.key === eqSel);
+  const it = itemByKey(eqSel);
   if (!it) return null;
   const g = doc.geom(it.block), c = itemCenter(it);
   return { x: c.x * view.s + view.tx, y: c.y * view.s + view.ty, r: Math.max(22, (g ? g.rad * Math.abs(it.sx) : 0) * view.s + 10) };
@@ -489,8 +510,12 @@ function openNPick(it) {
 }
 function eqAction(a) {
   if (a[0] === 'r' && a !== 'rot' && a !== 'reset') return runAction(a);
-  const it = EQ.items.find(i => i.key === eqSel);
+  const it = itemByKey(eqSel);
   if (!it) return;
+  if (it.isPt) {
+    if (a === 'del') { pushUndo(); P.points = P.points.filter(q => q !== it.pt); eqSel = null; save(); updateEqBar(); updateTitle(); req(); }
+    return;
+  }
   const mpu = P.mmPerUnit || 1;
   if (a === 'n') { if ($('#npick').classList.contains('on')) $('#npick').classList.remove('on'); else openNPick(it); return; }
   if (a === 'swap') { pushUndo(); swapDown(it); commitAll(); save(); updateEqBar(); req(); return; }
@@ -534,7 +559,7 @@ function eqAction(a) {
 }
 
 /* ---------- Føringer (buet strek = skjult anlegg) ---------- */
-function itemByKey(k) { return EQ.items.find(i => i.key === k && !i.del); }
+function itemByKey(k) { return allItems().find(i => i.key === k && !i.del); }
 function itemRad(it) { const g = doc.geom(it.block); return g ? g.rad * Math.abs(it.sx) * 0.85 : 0; }
 function arcPoints(p1, p2, b, n) {
   const th = 4 * Math.atan(b), dx = p2.x - p1.x, dy = p2.y - p1.y, c = Math.hypot(dx, dy);
@@ -646,7 +671,7 @@ function paletteBlocks() {
   for (const n of doc.r.blockNames) if (!cnt.has(n) && EQ_RE.test(n)) cnt.set(n, 0);
   const list = [...cnt.entries()].sort((a, b) => b[1] - a[1]).map(e => e[0]);
   for (const b of LIB) {
-    if (list.includes(b.name)) continue;
+    if (list.includes(b.name) || b.ceil) continue;
     const i = list.findIndex(n => b.like.test(n));
     list.splice(i >= 0 ? i + 1 : list.length, 0, b.name);
   }
@@ -736,6 +761,7 @@ function setEdMode(m) {
     toast('Utstyr kan flyttes i DXF-tegninger. Lagre som DXF i AutoCAD.');
     return;
   }
+  if (mode === 'row') endRow();
   edMode = m;
   document.querySelectorAll('#modeSeg button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
   $('#tools').classList.toggle('eq', m === 'utstyr');
@@ -781,8 +807,14 @@ function eqChanges() {
     addedRaw.push({ type: 'LWPOLYLINE', pairs: [[100, 'AcDbEntity'], [8, layer], [6, 'Continuous'], [100, 'AcDbPolyline'], [90, '2'], [70, '0'],
       [10, f(g.p1.x)], [20, f(-g.p1.y)], [42, f(-run.bu)], [10, f(g.p2.x)], [20, f(-g.p2.y)]] });
   }
+  // takpunkter som innsatte blokker (lampepunkt bruker tegningens lysblokk hvis den finnes)
+  for (const it of ptItems()) {
+    let block = it.block, tmpl = null;
+    if (it.pt.type === 'lampe') { const t = doc.r.inserts.find(i => doc.eqIns[i.idx] && /^E_LYS$|lys$/i.test(i.block) && !/vegg/i.test(i.block)); if (t) { block = t.block; tmpl = t.idx; } }
+    added.push({ block, layer: it.layer, x: it.x, y: it.y, r: 0, sx: 1, sy: 1, tmpl, _pt: true });
+  }
   const newBlocks = [];
-  for (const it of EQ.items) {
+  for (const it of EQ.items.concat(added.filter(a => a._pt).map(a => ({ added: true, block: a.block })))) {
     if (!it.added || it.del || doc.r.blockNames.includes(it.block) || newBlocks.some(b => b.name === it.block)) continue;
     const d = libDef(it.block);
     if (d) newBlocks.push({ name: d.name, ents: d.ents.map(libPairs) });

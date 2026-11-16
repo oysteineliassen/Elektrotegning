@@ -142,7 +142,9 @@
   #npick button { width: 40px; height: 40px; padding: 0; border-radius: 999px; background: #273244; border: none; color: #fff; font-weight: 700; font-size: 16px; }
   #npick button.on { background: var(--accent); color: #111; }
   #eqbar button.num { width: auto; padding: 0 12px; font-weight: 700; font-size: 15px; }
-  #tools.eq #chips, #tools.eq #placeBtn { display: none; }
+  #tools.eq #chips, #tools.eq #placeBtn, #tools.eq #rowBtn { display: none; }
+  #rowBtn { flex: none; border-radius: 999px; padding: 8px 12px; font-weight: 600; }
+  #rowBtn.on { background: #0d9488; border-color: #0d9488; color: #fff; }
   #tools.eq #pal { display: flex; }
   #tools.eq #chgBtn { display: block; }
   #pal { flex: 1; gap: 6px; overflow-x: auto; scrollbar-width: none; touch-action: pan-x; }
@@ -209,6 +211,7 @@
   <div id="tools">
     <div id="chips"></div>
     <button id="placeBtn" class="on">＋ Plasser</button>
+    <button id="rowBtn" aria-label="Lag rad">⋯ Rad</button>
     <div id="pal"></div>
     <button id="runBtn" aria-label="Tegn føring">〰</button>
     <button id="chgBtn" class="on" aria-label="Vis endringer">👁</button>

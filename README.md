@@ -19,3 +19,7 @@ DWG: lagre som DXF i AutoCAD LT først.
 - **Føringer (skjult anlegg)**: trykk 〰, trykk på punktene etter hverandre → buet strek mellom dem. Trykk på en strek for å bøye den andre veien (⇅), endre buen (⌒) eller slette. Eksporteres som buede polylinjer på føringslaget.
 - **Dimmer og termostat** ligger i paletten (E_DIMMER, E_TERMOSTAT). Blokkdefinisjonene legges inn i DXF-en ved eksport.
 - **Stabling**: dra et veggsymbol oppå et annet → de stables utover fra veggen på felles stamme og flyttes samlet. ⇵ bytter rekkefølge. Dra et symbol ut av stabelen for å løsne det.
+- **Rad**: «⋯ Rad» → trykk start og slutt → velg antall eller c/c, evt. «Fordel mellom veggene» (halv avstand inn mot vegg). Forhåndsvisning før de legges inn.
+- **Justering**: punkter som plasseres/flyttes nær samme X eller Y som et annet punkt låses på linje (stiplet hjelpelinje).
+- **c/c**: velg et punkt → avstand til naboene på samme linje vises; trykk på c/c-merket for å skrive inn avstanden.
+- Takpunktene vises uten mål i **Utstyr**, kan kobles med føringer og eksporteres i DXF som blokkene E_DOWNLIGHT, E_SPOT, E_ROYKVARSLER, E_HOYTTALER, E_KOBLINGSBOKS (lampepunkt bruker tegningens E_LYS).

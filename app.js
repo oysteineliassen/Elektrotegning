@@ -309,13 +309,14 @@ function drawText(ctx, t, v, W, H, color, ox, oy) {
 }
 
 const UNITS = { mm: 1, cm: 10, m: 1000, in: 25.4, ft: 304.8 };
-const WALL_RE = /vegg|wall|wand|v[aä]gg|mur|b[æa]rende|a-?40|^a-?wall/i;
+const WALL_RE = /vegg|wall|wand|v[aä]gg|mur|b[æa]rende|a-?40|^a-?wall|vindu|window/i;
 
 /* ---------------- Tilstand ---------------- */
 let P = null, doc = null;
 const view = { s: 1, tx: 0, ty: 0 };
 let selId = null, curType = 'downlight', placing = true, mode = 'edit';
 let calibPts = [], undoStack = [], labels = [], dragPt = null;
+let guides = [], guideT = 0, rowPts = [], rowPreview = null;
 let cw = 1, ch = 1, dpr = 1;
 const cv = $('#cv');
 
@@ -360,6 +361,41 @@ function applySnap(p) {
   p._d = null;
 }
 
+// juster mot andre punkter (samme X eller Y) – gjør det lett å lage rette rader
+function alignSnap(p) {
+  guides = [];
+  const tol = 10 / view.s;
+  let bx = null, by = null, dx = tol, dy = tol;
+  for (const q of P.points) {
+    if (q === p) continue;
+    const ax = Math.abs(q.x - p.x), ay = Math.abs(q.y - p.y);
+    if (ax < dx) { dx = ax; bx = q; }
+    if (ay < dy) { dy = ay; by = q; }
+  }
+  if (bx) { p.x = bx.x; guides.push([bx, p]); }
+  if (by) { p.y = by.y; guides.push([by, p]); }
+  if (bx || by) p._d = null;
+  clearTimeout(guideT);
+}
+function fadeGuides() { clearTimeout(guideT); guideT = setTimeout(() => { guides = []; req(); }, 900); }
+// nærmeste naboer på samme linje
+function neighbors(p) {
+  const tol = 1 / (P.mmPerUnit || 1);
+  const out = {};
+  for (const q of P.points) {
+    if (q === p) continue;
+    if (Math.abs(q.y - p.y) < tol) {
+      if (q.x < p.x && (!out.L || q.x > out.L.x)) out.L = q;
+      if (q.x > p.x && (!out.R || q.x < out.R.x)) out.R = q;
+    }
+    if (Math.abs(q.x - p.x) < tol) {
+      if (q.y < p.y && (!out.U || q.y > out.U.y)) out.U = q;
+      if (q.y > p.y && (!out.D || q.y < out.D.y)) out.D = q;
+    }
+  }
+  return out;
+}
+
 /* ---------------- Tegning ---------------- */
 let rafId = 0;
 function req() { if (!rafId) rafId = requestAnimationFrame(() => { rafId = 0; draw(); }); }
@@ -388,10 +424,29 @@ function drawOverlay(ctx, v, o) {
   for (const p of pts) {
     if (o.export || S.dims === 'all' || p.id === selId || p === dragPt) drawDims(ctx, v, p, o);
   }
+  if (!o.export) {
+    ctx.strokeStyle = '#0d9488'; ctx.lineWidth = 1.2; ctx.setLineDash([6, 4]);
+    for (const [a, b] of guides) {
+      ctx.beginPath(); ctx.moveTo(a.x * v.s + v.tx, a.y * v.s + v.ty); ctx.lineTo(b.x * v.s + v.tx, b.y * v.s + v.ty); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    const sp = dragPt || (selId && pts.find(q => q.id === selId));
+    if (sp && P.mmPerUnit) drawSpacing(ctx, v, sp, o);
+  }
   pts.forEach((p, i) => {
     const sx = p.x * v.s + v.tx, sy = p.y * v.s + v.ty;
     drawSym(ctx, p, sx, sy, 11 * k, !o.export && p.id === selId, i + 1, k);
   });
+  if (o.main && rowPreview) {
+    ctx.globalAlpha = 0.75;
+    rowPreview.forEach(q => drawSym(ctx, { type: curType }, q.x * v.s + v.tx, q.y * v.s + v.ty, 11 * k, false, '', k));
+    ctx.globalAlpha = 1;
+  }
+  if (o.main && mode === 'row' && rowPts.length === 1) {
+    const q = rowPts[0], x = q.x * v.s + v.tx, y = q.y * v.s + v.ty;
+    ctx.strokeStyle = '#0d9488'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.moveTo(x - 15, y); ctx.lineTo(x + 15, y); ctx.moveTo(x, y - 15); ctx.lineTo(x, y + 15); ctx.stroke();
+  }
   if (o.main && mode === 'calib') {
     ctx.strokeStyle = '#16a34a'; ctx.fillStyle = '#16a34a'; ctx.lineWidth = 2;
     calibPts.forEach((c, i) => {
@@ -421,6 +476,24 @@ function drawDims(ctx, v, p, o) {
     const wy = sy + (d.ys === 'U' ? -1 : 1) * dd * v.s;
     dimLine(ctx, sx, sy, sx, wy, '#c026d3', lw, k);
     dimLabel(ctx, fmt(dd), sx, (sy + wy) / 2, Math.abs(wy - sy), false, '#c026d3', k, sel, o.main ? { p, axis: 'y' } : null, d.ys === 'U' ? -1 : 1);
+  }
+}
+function drawSpacing(ctx, v, p, o) {
+  const nb = neighbors(p), k = o.k || 1, off = 24 * k, col = '#0d9488';
+  const sx = p.x * v.s + v.tx, sy = p.y * v.s + v.ty;
+  for (const side of ['L', 'R', 'U', 'D']) {
+    const q = nb[side];
+    if (!q) continue;
+    const qx = q.x * v.s + v.tx, qy = q.y * v.s + v.ty;
+    const horiz = side === 'L' || side === 'R';
+    const ax = horiz ? sx : sx - off, ay = horiz ? sy - off : sy, bx = horiz ? qx : qx - off, by = horiz ? qy - off : qy;
+    ctx.strokeStyle = col; ctx.lineWidth = 1.4 * k;
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+    if (horiz) { ctx.moveTo(ax, ay - 6); ctx.lineTo(ax, ay + 6); ctx.moveTo(bx, by - 6); ctx.lineTo(bx, by + 6); }
+    else { ctx.moveTo(ax - 6, ay); ctx.lineTo(ax + 6, ay); ctx.moveTo(bx - 6, by); ctx.lineTo(bx + 6, by); }
+    ctx.stroke();
+    const d = horiz ? Math.abs(q.x - p.x) : Math.abs(q.y - p.y);
+    dimLabel(ctx, 'c/c ' + fmt(d), (ax + bx) / 2, (ay + by) / 2, 1e9, horiz, col, k, false, o.main ? { p, axis: 'c' + side, nb: q } : null, 0);
   }
 }
 function dimLine(ctx, x1, y1, x2, y2, col, lw, k) {
@@ -596,6 +669,7 @@ cv.addEventListener('pointermove', e => {
     const u = toUnit(p.x + gest.off.x, p.y + gest.off.y);
     dragPt.x = u.x; dragPt.y = u.y; dragPt._d = null;
     applySnap(dragPt);
+    alignSnap(dragPt);
     req();
   }
 });
@@ -625,6 +699,17 @@ cv.addEventListener('wheel', e => {
 cv.addEventListener('contextmenu', e => e.preventDefault());
 
 function onTap(x, y, g) {
+  if (mode === 'row') {
+    const u = toUnit(x, y);
+    const tmp = { x: u.x, y: u.y };
+    if (P.mmPerUnit) { applySnap(tmp); }
+    alignSnap(tmp); fadeGuides();
+    rowPts.push(tmp);
+    if (rowPts.length === 1) setBanner('Rad: trykk der raden slutter', 'Avbryt', endRow);
+    req();
+    if (rowPts.length === 2) setTimeout(rowDialog, 120);
+    return;
+  }
   if (mode === 'calib') {
     calibPts.push(toUnit(x, y));
     if (calibPts.length === 1) setBanner('Trykk på punkt 2 av 2');
@@ -633,6 +718,7 @@ function onTap(x, y, g) {
     return;
   }
   if (eqActive()) { eqTap(x, y, g); return; }
+  if (g.hl && g.hl.axis[0] === 'c') { editSpacing(g.hl.p, g.hl.nb, g.hl.axis.slice(1)); return; }
   if (g.hl) { select(g.hl.p.id); editDim(g.hl.p, g.hl.axis); return; }
   if (g.hp) { select(selId === g.hp.id ? null : g.hp.id); return; }
   if (!placing) { select(null); return; }
@@ -641,6 +727,7 @@ function onTap(x, y, g) {
   const u = toUnit(x, y);
   const p = { id: uid(), type: curType, x: u.x, y: u.y, lockX: null, lockY: null };
   applySnap(p);
+  alignSnap(p); fadeGuides();
   P.points.push(p);
   select(p.id);
   save();
@@ -656,7 +743,7 @@ function startDrag(hp, x, y) {
   try { navigator.vibrate && navigator.vibrate(15); } catch (e) { }
   req();
 }
-function endDrag() { dragPt = null; save(); req(); }
+function endDrag() { dragPt = null; fadeGuides(); save(); req(); }
 
 /* ---------------- Valgt punkt ---------------- */
 function select(id) { selId = id; updatePanelVisibility(); req(); }
@@ -806,6 +893,109 @@ function editDim(p, axis) {
       pushUndo();
       if (axis === 'x') p.lockX = null; else p.lockY = null;
       p._d = null; close(); save(); req();
+    };
+  });
+}
+
+/* Avstand c/c mellom to punkter på linje */
+function editSpacing(p, q, side) {
+  const horiz = side === 'L' || side === 'R';
+  const cur = horiz ? Math.abs(q.x - p.x) : Math.abs(q.y - p.y);
+  select(p.id);
+  dialog(`<h2>Avstand c/c</h2><p>Fra punkt ${P.points.indexOf(q) + 1} til punkt ${P.points.indexOf(p) + 1}. Punkt ${P.points.indexOf(p) + 1} flyttes.</p>
+    <label class="f">Avstand i mm</label><input id="sIn" class="bigin" inputmode="decimal" value="${fmt(cur)}">
+    <div class="btns"><button data-x>Avbryt</button><button class="primary" data-ok>Flytt</button></div>`, (el, close) => {
+    const inp = $('#sIn', el); setTimeout(() => { inp.focus(); inp.select(); }, 60);
+    const ok = () => {
+      const v = parseNum(inp.value);
+      if (!(v > 0)) return;
+      pushUndo();
+      const d = v / P.mmPerUnit;
+      if (horiz) p.x = q.x + (side === 'L' ? d : -d); else p.y = q.y + (side === 'U' ? d : -d);
+      p._d = null; close(); save(); req();
+    };
+    $('[data-ok]', el).onclick = ok; inp.onkeydown = e => { if (e.key === 'Enter') ok(); };
+    $('[data-x]', el).onclick = close;
+  });
+}
+
+/* Rad med punkter */
+function startRow() {
+  if (!P.mmPerUnit) { askScale(); return; }
+  mode = 'row'; rowPts = []; rowPreview = null; select(null);
+  $('#rowBtn').classList.add('on');
+  setBanner(`Rad (${(TYPES[curType] || TYPES.downlight).name}): trykk der raden starter`, 'Avbryt', endRow);
+  req();
+}
+function endRow() {
+  mode = 'edit'; rowPts = []; rowPreview = null;
+  $('#rowBtn').classList.remove('on');
+  setBanner(null); req();
+}
+function rowDialog() {
+  const mpu = P.mmPerUnit;
+  let [A, B] = rowPts;
+  const ang = Math.atan2(B.y - A.y, B.x - A.x);
+  if (Math.abs(Math.sin(ang)) < 0.14) B = { x: B.x, y: A.y };
+  else if (Math.abs(Math.cos(ang)) < 0.14) B = { x: A.x, y: B.y };
+  const L = Math.hypot(B.x - A.x, B.y - A.y);
+  if (L * mpu < 100) { toast('For kort rad'); endRow(); return; }
+  const ux = (B.x - A.x) / L, uy = (B.y - A.y) / L;
+  const axH = Math.abs(uy) < 1e-9, axV = Math.abs(ux) < 1e-9;
+  let W = null;
+  if (axH || axV) {
+    const M = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 };
+    const back = doc.ray(M.x, M.y, axH ? (ux > 0 ? 'L' : 'R') : (uy > 0 ? 'U' : 'D'), mpu);
+    const fwd = doc.ray(M.x, M.y, axH ? (ux > 0 ? 'R' : 'L') : (uy > 0 ? 'D' : 'U'), mpu);
+    if (back != null && fwd != null) W = { s: { x: M.x - ux * back, y: M.y - uy * back }, len: back + fwd };
+  }
+  let rmode = 'n';
+  const calc = (val, walls) => {
+    let n, c, m = null, pts = [];
+    if (walls && W) {
+      if (rmode === 'n') { n = Math.max(1, Math.round(val)); c = W.len / n; }
+      else { c = val / mpu; n = Math.max(1, Math.floor(W.len / c + 1e-9)); }
+      m = (W.len - (n - 1) * c) / 2;
+      for (let i = 0; i < n; i++) pts.push({ x: W.s.x + ux * (m + i * c), y: W.s.y + uy * (m + i * c) });
+    } else {
+      if (rmode === 'n') { n = Math.max(2, Math.round(val)); c = L / (n - 1); }
+      else { c = val / mpu; n = Math.floor(L / c + 1e-9) + 1; }
+      for (let i = 0; i < n; i++) pts.push({ x: A.x + ux * i * c, y: A.y + uy * i * c });
+    }
+    return { pts, n, c, m };
+  };
+  dialog(`<h2>Rad med ${esc((TYPES[curType] || TYPES.downlight).name.toLowerCase())}</h2>
+    <div class="seg"><button data-m="n" class="on">Antall</button><button data-m="cc">Avstand c/c</button></div>
+    <input id="rIn" class="bigin" inputmode="decimal" value="3">
+    <label class="setrow" style="margin-top:12px"><span>Fordel mellom veggene<br><small style="color:var(--muted)">${W ? 'Halv avstand inn mot vegg' : 'Ingen vegger funnet langs raden'}</small></span>
+      <input type="checkbox" id="rW" ${W ? 'checked' : 'disabled'} style="width:24px;height:24px"></label>
+    <p id="rSum" style="color:var(--text);font-weight:600"></p>
+    <div class="btns"><button data-x>Avbryt</button><button class="primary" data-ok>Lag rad</button></div>`, (el, close) => {
+    $('#dlg').dataset.lock = '1';
+    const inp = $('#rIn', el), cb = $('#rW', el), sum = $('#rSum', el);
+    const upd = () => {
+      const v = parseNum(inp.value);
+      if (!(v > 0)) { sum.textContent = ''; rowPreview = null; req(); return; }
+      const r = calc(v, cb.checked);
+      if (r.n > 200) { sum.textContent = 'For mange punkter'; rowPreview = null; req(); return; }
+      sum.textContent = `${r.n} stk · c/c ${Math.round(r.c * mpu)} mm` + (r.m != null ? ` · ${Math.round(r.m * mpu)} mm fra vegg` : '');
+      rowPreview = r.pts; req();
+    };
+    el.querySelectorAll('[data-m]').forEach(b => b.onclick = () => {
+      rmode = b.dataset.m;
+      el.querySelectorAll('[data-m]').forEach(x => x.classList.toggle('on', x === b));
+      inp.value = rmode === 'n' ? '3' : '1200'; upd(); inp.focus(); inp.select();
+    });
+    inp.oninput = upd; cb.onchange = upd;
+    upd(); setTimeout(() => { inp.focus(); inp.select(); }, 60);
+    const fin = () => { delete $('#dlg').dataset.lock; close(); endRow(); };
+    $('[data-x]', el).onclick = fin;
+    $('[data-ok]', el).onclick = () => {
+      if (!rowPreview || !rowPreview.length) return;
+      pushUndo();
+      for (const q of rowPreview) P.points.push({ id: uid(), type: curType, x: q.x, y: q.y, lockX: null, lockY: null });
+      const n = rowPreview.length;
+      fin(); save(); toast(n + ' punkter lagt til');
     };
   });
 }
@@ -1138,6 +1328,7 @@ function setPlacing(on) {
   b.classList.toggle('on', on);
   b.textContent = on ? '＋ Plasser' : '✋ Se';
 }
+$('#rowBtn').onclick = () => { if (mode === 'row') endRow(); else startRow(); };
 $('#placeBtn').onclick = () => { setPlacing(!placing); toast(placing ? 'Trykk på tegningen for å plassere' : 'Plassering av – trykk velger bare'); };
 
 /* ---------------- Innlasting av fil ---------------- */
