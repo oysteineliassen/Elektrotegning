@@ -625,9 +625,11 @@ cv.addEventListener('pointerdown', e => {
   const p = pos(e);
   ptrs.set(e.pointerId, p);
   if (ptrs.size === 1 && eqActive() && mode === 'edit') {
-    const hi = hitItem(p.x, p.y);
-    gest = { type: 'pending', x0: p.x, y0: p.y, hi, v0: { ...view } };
-    if (hi) lpTimer = setTimeout(() => startItemDrag(hi, p.x, p.y), 380);
+    const hk = eqTool === 'sel' ? hitKurs(p.x, p.y) : null;
+    const hi = hk ? null : hitItem(p.x, p.y);
+    gest = { type: 'pending', x0: p.x, y0: p.y, hi, hk, v0: { ...view } };
+    if (hk) lpTimer = setTimeout(() => { if (gest && gest.type === 'pending') { gest.type = 'kdrag'; try { navigator.vibrate && navigator.vibrate(15); } catch (e) { } } }, 380);
+    else if (hi) lpTimer = setTimeout(() => startItemDrag(hi, p.x, p.y), 380);
   } else if (ptrs.size === 1) {
     const hp = mode === 'edit' ? hitPoint(p.x, p.y) : null;
     const hl = mode === 'edit' ? hitLabel(p.x, p.y) : null;
@@ -663,6 +665,8 @@ cv.addEventListener('pointermove', e => {
   if (gest.type === 'pan') {
     view.tx = gest.v0.tx + (p.x - gest.x0); view.ty = gest.v0.ty + (p.y - gest.y0);
     req();
+  } else if (gest.type === 'kdrag') {
+    moveKurs(gest.hk, p);
   } else if (gest.type === 'idrag') {
     moveItemDrag(p);
   } else if (gest.type === 'drag') {
@@ -681,6 +685,7 @@ function ptrEnd(e) {
   if (gest.type === 'pending' && e.type === 'pointerup') onTap(gest.x0, gest.y0, gest);
   else if (gest.type === 'drag') endDrag();
   else if (gest.type === 'idrag') endItemDrag();
+  else if (gest.type === 'kdrag') save();
   else if (gest.type === 'pinch' && ptrs.size === 1) {
     const [p] = [...ptrs.values()];
     gest = { type: 'pan', x0: p.x, y0: p.y, v0: { ...view } };

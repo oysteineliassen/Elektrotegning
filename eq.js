@@ -213,6 +213,7 @@ function drawEquip(ctx, v, dpr, o, W, H) {
   const L = doc.r.layers, k = o.k || 1;
   const showChg = !o.export && S.showChg !== false && edMode === 'utstyr';
   drawRuns(ctx, v, dpr, o);
+  drawKurs(ctx, v, dpr, o);
   const list = edMode === 'utstyr' || o.export ? allItems() : EQ.items;
   for (const it of list) {
     if (!doc.show[it.li]) continue;
@@ -305,6 +306,7 @@ function hitItem(x, y) {
 function eqSelect(key) { eqSel = key; updateEqBar(); req(); }
 
 function eqTap(x, y, g) {
+  if (g.hk) { editKurs(g.hk); return; }
   if (eqTool === 'run') {
     if (g.hi) {
       if (!runStart) runStart = g.hi.key;
@@ -458,10 +460,11 @@ function updateEqBar() {
   const it = !run && eqSel && itemByKey(eqSel);
   if (!eqActive() || (!run && (!it || it.del)) || (gest && gest.type === 'idrag')) { bar.classList.remove('on'); bar.dataset.k = ''; return; }
   let html;
-  if (it && it.isPt) html = `<b>${esc((TYPES[it.pt.type] || TYPES.downlight).name)}</b><button data-a="del" title="Slett">🗑</button>`;
+  const kb = it ? `<button class="num" data-a="kurs" title="Kursnummer (første boks etter tavla)">${kursOf(it.key) ? esc(kursText(kursOf(it.key)).replace('\n', '')) : 'Kurs'}</button>` : '';
+  if (it && it.isPt) html = `<b>${esc((TYPES[it.pt.type] || TYPES.downlight).name)}</b>${kb}<button data-a="del" title="Slett">🗑</button>`;
   else if (run) html = `<b>Føring</b><button data-a="rflip" title="Bøy andre veien">⇅</button><button data-a="rbend" title="Mer/mindre bue">⌒</button><button data-a="rdel" title="Slett">🗑</button>`;
   else html = `<b>${esc(prettyBlock(it.block))}${it.added ? ' · ny' : isMoved(it) ? ' · flyttet' : ''}</b>`
-    + (countable(it.block) ? `<button class="num" data-a="n" title="Antall uttak">${it.n}×</button>` : '')
+    + (countable(it.block) ? `<button class="num" data-a="n" title="Antall uttak">${it.n}×</button>` : '') + kb
     + (inStack(it) ? `<button data-a="swap" title="Bytt plass i stabelen">⇵</button>` : `<button data-a="rot" title="Roter 90°">⟳</button><button data-a="flip" title="Snu til andre siden av veggen">⇅</button>`)
     + `<button data-a="dup" title="Kopier">⧉</button>`
     + (isMoved(it) ? `<button data-a="reset" title="Tilbake til prosjektert">↺</button>` : '')
@@ -512,6 +515,7 @@ function eqAction(a) {
   if (a[0] === 'r' && a !== 'rot' && a !== 'reset') return runAction(a);
   const it = itemByKey(eqSel);
   if (!it) return;
+  if (a === 'kurs') { editKurs(it.key); return; }
   if (it.isPt) {
     if (a === 'del') { pushUndo(); P.points = P.points.filter(q => q !== it.pt); eqSel = null; save(); updateEqBar(); updateTitle(); req(); }
     return;
@@ -556,6 +560,125 @@ function eqAction(a) {
   if (a !== 'dup' && EQ.items.includes(it)) commitItem(it);
   resolveStacks(); commitAll();
   save(); updateEqBar(); updateTitle(); req();
+}
+
+/* ---------- Kursnummer ved første boks etter tavla (sirkel med -F3, ev. =433.11) ---------- */
+const KURS_H = 100; // teksthøyde i mm
+function kursMap() { return (P.eq.kurs = P.eq.kurs || {}); }
+function kursOf(key) { return P.eq && P.eq.kurs && P.eq.kurs[key]; }
+function kursText(k) { return (k.f ? k.f + '\n' : '') + '-F' + k.k; }
+function tavlePos() {
+  const t = EQ.items.find(i => !i.del && /tavle|sikring|fordeling/i.test(i.block));
+  return t ? itemCenter(t) : null;
+}
+function kursGeom(key) {
+  const k = kursOf(key), it = itemByKey(key);
+  if (!k || !it) return null;
+  const mpu = P.mmPerUnit || 1, h = KURS_H / mpu;
+  const lines = kursText(k).split('\n');
+  const fs = h / 0.718, w = Math.max(...lines.map(l => textW(l, fs)));
+  const R = Math.hypot(w / 2, lines.length * 1.66 * h / 2 * 0.9) + 0.35 * h;
+  const c = itemCenter(it), g = doc.geom(it.block), ir = g ? g.rad * Math.abs(it.sx) : 100 / mpu;
+  let dx = k.dx, dy = k.dy;
+  if (dx == null) {
+    const t = tavlePos();
+    let ux = -0.7071, uy = -0.7071;
+    if (t) { const d = Math.hypot(t.x - c.x, t.y - c.y); if (d > 1e-6) { ux = (t.x - c.x) / d; uy = (t.y - c.y) / d; } }
+    const dist = ir + R + 250 / mpu;
+    dx = ux * dist; dy = uy * dist;
+  }
+  const cx = c.x + dx, cy = c.y + dy, d = Math.hypot(dx, dy) || 1;
+  const ux = dx / d, uy = dy / d;
+  return { cx, cy, R, h, lines, a: { x: c.x + ux * ir * 0.9, y: c.y + uy * ir * 0.9 }, b: { x: cx - ux * R, y: cy - uy * R }, col: '#dc2626' };
+}
+function kursColor() {
+  const li = doc.r.layers.findIndex(l => l.name === runLayer());
+  return li >= 0 ? aci(doc.r.layers[li].color) : '#dc2626';
+}
+function drawKurs(ctx, v, dpr, o) {
+  const m = P.eq && P.eq.kurs;
+  if (!m) return;
+  const col = kursColor();
+  for (const key of Object.keys(m)) {
+    const G = kursGeom(key);
+    if (!G) continue;
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.strokeStyle = col; ctx.lineWidth = 1.2 * (o.k || 1);
+    ctx.beginPath(); ctx.moveTo(G.a.x * v.s + v.tx, G.a.y * v.s + v.ty); ctx.lineTo(G.b.x * v.s + v.tx, G.b.y * v.s + v.ty); ctx.stroke();
+    ctx.lineWidth = 1.6 * (o.k || 1);
+    ctx.beginPath(); ctx.arc(G.cx * v.s + v.tx, G.cy * v.s + v.ty, G.R * v.s, 0, Math.PI * 2); ctx.stroke();
+    ctx.setTransform(dpr * v.s, 0, 0, dpr * v.s, dpr * v.tx, dpr * v.ty);
+    drawText(ctx, { x: G.cx, y: G.cy, h: G.h, rot: 0, s: G.lines.join('\n'), ha: 'center', va: 'middle' }, v, 0, 0, col, 0, 0);
+    ctx.restore();
+  }
+}
+function hitKurs(x, y) {
+  const m = P && P.eq && P.eq.kurs;
+  if (!m) return null;
+  for (const key of Object.keys(m)) {
+    const G = kursGeom(key);
+    if (G && Math.hypot(G.cx * view.s + view.tx - x, G.cy * view.s + view.ty - y) < Math.max(22, G.R * view.s + 6)) return key;
+  }
+  return null;
+}
+function moveKurs(key, p) {
+  const k = kursOf(key), it = itemByKey(key);
+  if (!k || !it) return;
+  const u = toUnit(p.x, p.y), c = itemCenter(it);
+  k.dx = u.x - c.x; k.dy = u.y - c.y;
+  req();
+}
+function nextKurs() {
+  const nums = Object.values(kursMap()).map(k => parseInt(k.k, 10)).filter(n => !isNaN(n));
+  return nums.length ? String(Math.max(...nums) + 1) : '1';
+}
+function editKurs(key) {
+  const cur = kursOf(key);
+  const lastF = P.eq.lastFord || '';
+  dialog(`<h2>Kursnummer</h2><p>Merker første punkt etter sikringsskapet.</p>
+    <label class="f">Kurs</label>
+    <div style="display:flex;align-items:center;gap:8px"><span class="bigin" style="flex:none">-F</span><input id="kIn" class="bigin" inputmode="numeric" autocomplete="off" value="${esc(cur ? cur.k : nextKurs())}"></div>
+    <label class="f">Fordeling – bare ved flere tavler (f.eks. =433.11)</label>
+    <input id="fIn" autocomplete="off" placeholder="Tom = ikke vis" value="${esc(cur ? (cur.f || '') : lastF)}">
+    <p id="kPrev" style="color:var(--text);font-weight:600"></p>
+    <div class="btns">${cur ? '<button class="danger" data-del>Fjern</button>' : ''}<button data-x>Avbryt</button><button class="primary" data-ok>OK</button></div>`, (el, close) => {
+    const ki = $('#kIn', el), fi = $('#fIn', el), pv = $('#kPrev', el);
+    const norm = () => { let f = fi.value.trim(); if (f && f[0] !== '=') f = '=' + f; return f; };
+    const upd = () => { pv.textContent = ki.value.trim() ? 'Vises som: ' + (norm() ? norm() + ' ' : '') + '-F' + ki.value.trim() : ''; };
+    ki.oninput = upd; fi.oninput = upd; upd();
+    setTimeout(() => { ki.focus(); ki.select(); }, 60);
+    const ok = () => {
+      const k = ki.value.trim().replace(/^-?F/i, '');
+      if (!k) return;
+      pushUndo();
+      const f = norm();
+      kursMap()[key] = Object.assign(cur || {}, { k, f: f || undefined });
+      P.eq.lastFord = f;
+      close(); save(); updateEqBar(); req();
+    };
+    $('[data-ok]', el).onclick = ok;
+    ki.onkeydown = e => { if (e.key === 'Enter') ok(); };
+    $('[data-x]', el).onclick = close;
+    const d = $('[data-del]', el);
+    if (d) d.onclick = () => { pushUndo(); delete kursMap()[key]; close(); save(); updateEqBar(); req(); };
+  });
+}
+function kursExport(layer) {
+  const out = [], f = DXF.fmtN, m = (P.eq && P.eq.kurs) || {};
+  for (const key of Object.keys(m)) {
+    const G = kursGeom(key);
+    if (!G) continue;
+    const base = [[100, 'AcDbEntity'], [8, layer], [6, 'Continuous']];
+    out.push({ type: 'LINE', pairs: base.concat([[100, 'AcDbLine'], [10, f(G.a.x)], [20, f(-G.a.y)], [30, '0'], [11, f(G.b.x)], [21, f(-G.b.y)], [31, '0']]) });
+    out.push({ type: 'CIRCLE', pairs: base.concat([[100, 'AcDbCircle'], [10, f(G.cx)], [20, f(-G.cy)], [30, '0'], [40, f(G.R)]]) });
+    const ls = 1.66 * G.h, n = G.lines.length;
+    G.lines.forEach((ln, i) => {
+      const y = G.cy - (n - 1) * ls / 2 + i * ls;
+      out.push({ type: 'TEXT', pairs: base.concat([[100, 'AcDbText'], [10, f(G.cx)], [20, f(-y)], [30, '0'], [40, f(G.h)], [1, ln], [72, '1'], [11, f(G.cx)], [21, f(-y)], [31, '0'], [100, 'AcDbText'], [73, '2']]) });
+    });
+  }
+  return out;
 }
 
 /* ---------- Føringer (buet strek = skjult anlegg) ---------- */
@@ -819,6 +942,7 @@ function eqChanges() {
     const d = libDef(it.block);
     if (d) newBlocks.push({ name: d.name, ents: d.ents.map(libPairs) });
   }
+  addedRaw.push(...kursExport(layer));
   return { moved, deleted, added, textMoves, textDeletes, textEdits, addedTexts, addedRaw, newBlocks };
 }
 async function exportDxf() {

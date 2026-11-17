@@ -64,7 +64,7 @@ function pdfLayout(ex) {
   let N;
   if (ex.scale === 'auto') { N = SCALES.find(n => wmm / n <= aw && hmm / n <= ah) || SCALES[SCALES.length - 1]; }
   else N = +ex.scale;
-  return { pw, ph, m, foot, aw, ah, N, land, area: a, fits: wmm / N <= aw + 0.5 && hmm / N <= ah + 0.5 };
+  return { paper: ex.paper, pw, ph, m, foot, aw, ah, N, land, area: a, fits: wmm / N <= aw + 0.5 && hmm / N <= ah + 0.5 };
 }
 
 /* ---------- PDF-skriver ---------- */
@@ -236,6 +236,19 @@ function pdfContent(L) {
       pen.text(col, q.x, q.y, t.h, t.rot, String(it.n), t.ha, t.va);
     }
   }
+  // kursmerking
+  if (P.eq && P.eq.kurs) {
+    const col = kursColor();
+    for (const key of Object.keys(P.eq.kurs)) {
+      const G = kursGeom(key);
+      if (!G) continue;
+      pen.stroke(col, 0.3); pen.lines([[G.a.x, G.a.y, G.b.x, G.b.y]]);
+      const pts = [];
+      for (let i = 0; i <= 48; i++) { const t = i / 48 * Math.PI * 2; pts.push({ x: G.cx + G.R * Math.cos(t), y: G.cy + G.R * Math.sin(t) }); }
+      pen.stroke(col, 0.4); pen.poly(pts);
+      pen.text(col, G.cx, G.cy, G.h, 0, G.lines.join('\n'), 'center', 'middle');
+    }
+  }
   // mål for takpunkter
   if (edMode === 'mal') {
     for (const p of P.points) {
@@ -254,7 +267,7 @@ function pdfContent(L) {
   pen.ops.push('Q');
   // tittelfelt
   const date = new Date().toLocaleDateString('no-NO');
-  const title = `${P.name} – ${edMode === 'mal' ? 'takpunkter, mål i mm til vegg' : 'installasjonstegning'} – målestokk 1:${L.N} (${S.exp.paper}) – ${date}`;
+  const title = `${P.name} – ${edMode === 'mal' ? 'takpunkter, mål i mm til vegg' : 'installasjonstegning'} – målestokk 1:${L.N} (${L.paper}) – ${date}`;
   pen.ops.push(`0.6 0.6 0.6 RG 0.3 w [] 0 d ${pen.n(L.m * MM)} ${pen.n(L.m * MM)} ${pen.n(L.aw * MM)} ${pen.n((L.ah + L.foot) * MM)} re S`);
   pen.ops.push(`${pen.n(L.m * MM)} ${pen.n((L.m + L.foot) * MM)} m ${pen.n((L.m + L.aw) * MM)} ${pen.n((L.m + L.foot) * MM)} l S`);
   pen.ops.push(`BT 0 0 0 rg /F1 8 Tf 1 0 0 1 ${pen.n((L.m + 3) * MM)} ${pen.n((L.m + 2.8) * MM)} Tm ${pdfStr(title)} Tj ET`);
