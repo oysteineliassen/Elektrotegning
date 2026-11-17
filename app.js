@@ -205,7 +205,7 @@ class DxfDoc {
     const b = bg.bbox;
     const pts = [];
     for (let k = 0; k < s.x1.length; k++) pts.push(s.x1[k], s.y1[k], s.x2[k], s.y2[k]);
-    g = { path, fill, texts: s.texts, bbox: b, pts, cx: (b.x0 + b.x1) / 2, cy: (b.y0 + b.y1) / 2, rad: Math.hypot(b.x1 - b.x0, b.y1 - b.y0) / 2 };
+    g = { path, fill, fills: s.fills, texts: s.texts, bbox: b, pts, cx: (b.x0 + b.x1) / 2, cy: (b.y0 + b.y1) / 2, rad: Math.hypot(b.x1 - b.x0, b.y1 - b.y0) / 2 };
     this.gcache.set(name, g);
     return g;
   }
@@ -1152,8 +1152,7 @@ function openMenu() {
     <button data-a="fit">⤢ Tilpass visning</button>
     <button data-a="set">⚙ Innstillinger</button>
     ${isPdf ? '<button data-a="scale">📏 Målestokk / kalibrer</button>' : '<button data-a="layers">▤ Lag og vegger</button>'}
-    <button data-a="img">🖼 Del bilde av ${eqActive() ? 'installasjonstegning' : 'planen'}</button>
-    ${isPdf ? '' : '<button data-a="dxf">📐 Eksporter DXF (som bygget)</button>'}
+    <button data-a="exp">⬇ Eksporter (PDF${isPdf ? '' : ', DXF'} eller bilde)</button>
     <button data-a="bak">💾 Eksporter prosjekt (backup)</button>
     <button data-a="ren">✎ Gi nytt navn</button>
     ${eqActive() ? '<button data-a="eqreset" class="danger">Tilbakestill alt utstyr til prosjektert</button>' : '<button data-a="clr" class="danger">Slett alle punkter</button>'}
@@ -1167,8 +1166,7 @@ function openMenu() {
       else if (a === 'set') openSettings();
       else if (a === 'scale') askScale();
       else if (a === 'layers') openLayers();
-      else if (a === 'img') exportImage();
-      else if (a === 'dxf') exportDxf();
+      else if (a === 'exp') openExport();
       else if (a === 'bak') exportBackup(P);
       else if (a === 'ren') promptDlg('Gi nytt navn', 'Navn', P.name, v => { P.name = v; updateTitle(); save(); });
       else if (a === 'eqreset') confirmDlg('Tilbakestille utstyr?', `${changeCount()} endringer forkastes (kan angres).`, 'Tilbakestill', () => { pushUndo(); P.eq = { edits: {}, added: [] }; buildItems(); eqSel = null; updateEqBar(); save(); req(); }, true);
@@ -1193,13 +1191,13 @@ async function shareOrDownload(blob, filename, title) {
   toast('Lastet ned ' + filename);
 }
 function safeName(s) { return s.replace(/[^\wæøåÆØÅ\- ]+/g, '').trim().replace(/\s+/g, '_') || 'plan'; }
-async function exportImage() {
-  const b = doc.bounds, bw = b.x1 - b.x0, bh = b.y1 - b.y0;
-  const maxSide = 3600;
+function renderExportCanvas(maxSide, footer, area) {
+  const b = area || doc.bounds, bw = b.x1 - b.x0, bh = b.y1 - b.y0;
+  maxSide = maxSide || 3600;
   let s = maxSide / Math.max(bw, bh);
   if (doc.kind === 'pdf') s = Math.min(s, doc.b * 1.5);
   const W = Math.round(bw * s), H = Math.round(bh * s);
-  const c = document.createElement('canvas'); c.width = W; c.height = H + Math.round(60 * W / 1800);
+  const c = document.createElement('canvas'); c.width = W; c.height = H + (footer === false ? 0 : Math.round(60 * W / 1800));
   const ctx = c.getContext('2d');
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
   const v = { s, tx: -b.x0 * s, ty: -b.y0 * s };
@@ -1209,13 +1207,18 @@ async function exportImage() {
   const saveLabels = labels;
   if (edMode === 'mal' || doc.kind !== 'dxf') drawOverlay(ctx, v, { export: true, k });
   labels = saveLabels;
+  if (footer === false) return c;
   // bunntekst
   const fh = Math.round(18 * W / 1800);
   ctx.fillStyle = '#fff'; ctx.fillRect(0, H, W, c.height - H);
   ctx.fillStyle = '#111'; ctx.font = `600 ${fh}px system-ui`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   const foot = eqActive() ? `${P.name} – installasjonstegning – ${new Date().toLocaleDateString('no-NO')}` : `${P.name} – ${P.points.length} punkter – mål i mm til vegg (blå = X, lilla = Y) – ${new Date().toLocaleDateString('no-NO')}`;
   ctx.fillText(foot, fh, H + (c.height - H) / 2);
-  c.toBlob(blob => { if (blob) shareOrDownload(blob, safeName(P.name) + '_takpunkter.png', P.name); else toast('Bildet ble for stort'); }, 'image/png');
+  return c;
+}
+function exportImage() {
+  const c = renderExportCanvas();
+  c.toBlob(blob => { if (blob) shareOrDownload(blob, safeName(P.name) + (eqActive() ? '_installasjon.png' : '_takpunkter.png'), P.name); else toast('Bildet ble for stort'); }, 'image/png');
 }
 function blobToB64(blob) {
   return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(blob); });

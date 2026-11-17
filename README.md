@@ -23,3 +23,4 @@ DWG: lagre som DXF i AutoCAD LT først.
 - **Justering**: punkter som plasseres/flyttes nær samme X eller Y som et annet punkt låses på linje (stiplet hjelpelinje).
 - **c/c**: velg et punkt → avstand til naboene på samme linje vises; trykk på c/c-merket for å skrive inn avstanden.
 - Takpunktene vises uten mål i **Utstyr**, kan kobles med føringer og eksporteres i DXF som blokkene E_DOWNLIGHT, E_SPOT, E_ROYKVARSLER, E_HOYTTALER, E_KOBLINGSBOKS (lampepunkt bruker tegningens E_LYS).
+- **Eksport** (meny → Eksporter): PDF i valgt papirstørrelse og målestokk (vektor fra DXF, bilde fra PDF-underlag), DXF «som bygget», eller bilde. Eksporterer det som vises: Takpunkter (med mål) eller Utstyr (installasjonstegning).
