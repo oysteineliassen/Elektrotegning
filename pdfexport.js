@@ -12,10 +12,13 @@ function openExport() {
   const opt = (arr, cur) => arr.map(([v, t]) => `<option value="${v}" ${String(v) === String(cur) ? 'selected' : ''}>${t}</option>`).join('');
   const ex = S.exp || (S.exp = { fmt: 'pdf', paper: 'A3', scale: 'auto', area: 'all' });
   if (!ex.what) ex.what = 'inst';
-  dialog(`<h2>Eksporter</h2>
-    ${isDxf ? `<div id="xWhat"><label class="f">Innhold</label><div class="seg">
-      <button data-w="inst">Installasjonstegning<small>til overlevering – uten mål</small></button>
-      <button data-w="mal">Takpunkter med mål<small>for utboring på bygg</small></button></div></div>` : ''}
+  const uncal = !isDxf && !P.mmPerUnit;
+  dialog(`<h2>Del tegning</h2>
+    ${isDxf ? `<div id="xWhat"><label class="f">Hva skal mottakeren få?</label><div class="seg">
+      <button data-w="inst">Installasjonstegning – uten mål<small>til kunden ved overlevering</small></button>
+      <button data-w="mal">Boreunderlag – takpunkter med mål<small>for utboring etter at taket er kledd</small></button></div></div>`
+      : `<label class="f">Mottakeren får</label><p style="color:var(--text);margin:4px 0 8px"><b>Boreunderlag – takpunkter med mål</b></p>`}
+    ${uncal ? '<p class="warnbox">Tegningen er ikke kalibrert. Målene blir ikke gyldige før du har satt målestokk.</p>' : ''}
     <label class="f">Format</label>
     <div class="seg" style="grid-template-columns:repeat(${isDxf ? 3 : 2},1fr)">
       <button data-f="pdf">PDF</button>${isDxf ? '<button data-f="dxf">DXF</button>' : ''}<button data-f="png">Bilde</button></div>
@@ -24,10 +27,12 @@ function openExport() {
       <div class="setrow"><span>Målestokk</span><select id="xScale">${opt([['auto', 'Største som får plass']].concat(SCALES.map(n => [n, '1:' + n])), ex.scale)}</select></div>
       <div class="setrow"><span>Utsnitt</span><select id="xArea">${opt([['all', 'Hele tegningen'], ['view', 'Det du ser nå']], ex.area)}</select></div>
       ${isDxf ? `<label class="setrow" id="xListsRow"><span>Materialliste og kursliste på side 2</span><input type="checkbox" id="xLists" ${ex.lists !== false ? 'checked' : ''} style="width:24px;height:24px"></label>` : ''}
-      <p id="xInfo" style="color:var(--text);font-weight:600"></p>
+      <p id="xInfo" style="color:var(--muted)"></p>
     </div>
+    <p id="xSum" class="sumbox"></p>
     <p id="dxfInfo" style="display:none">DXF med alle endringer (flyttet, nytt, slettet, føringer og takpunkter). Åpne i AutoCAD og plott fra arkfanen som før.</p>
-    <div class="btns"><button data-x>Avbryt</button><button class="primary" data-ok>Eksporter</button></div>`, (el, close) => {
+    <div class="btns"><button data-x>Avbryt</button><button class="primary" data-ok>Del tegning</button></div>
+    <p style="font-size:12px">Sikkerhetskopi av hele prosjektet med bilder ligger i menyen under «Sikkerhetskopi».</p>`, (el, close) => {
     let fmt = isDxf || ex.fmt !== 'dxf' ? ex.fmt : 'pdf';
     const upd = () => {
       el.querySelectorAll('[data-f]').forEach(b => b.classList.toggle('on', b.dataset.f === fmt));
@@ -37,10 +42,17 @@ function openExport() {
       $('#dxfInfo', el).style.display = fmt === 'dxf' ? '' : 'none';
       ex.paper = $('#xPaper', el).value; ex.scale = $('#xScale', el).value; ex.area = $('#xArea', el).value; ex.fmt = fmt;
       const xl = $('#xLists', el); if (xl) { ex.lists = xl.checked; $('#xListsRow', el).style.display = ex.what === 'mal' ? 'none' : ''; }
+      let lay = '';
       if (fmt === 'pdf') {
         const L = pdfLayout(ex);
-        $('#xInfo', el).textContent = L ? `${ex.paper} ${L.land ? 'liggende' : 'stående'} · 1:${L.N}` + (L.fits ? '' : ' · får ikke plass, beskjæres') : 'Mangler målestokk';
+        lay = L ? `${ex.paper} ${L.land ? 'liggende' : 'stående'} · 1:${L.N}` + (L.fits ? '' : ' · får ikke plass, beskjæres') : 'mangler målestokk';
+        $('#xInfo', el).textContent = lay;
       }
+      const what = !isDxf || ex.what === 'mal' ? 'Boreunderlag – takpunkter med mål' : 'Installasjonstegning – uten mål';
+      const extra = fmt === 'pdf' && isDxf && ex.what !== 'mal' && ex.lists !== false ? ' · med materialliste og kursliste' : '';
+      $('#xSum', el).innerHTML = fmt === 'dxf'
+        ? '<b>Mottakeren får:</b> DXF-fil med alle endringer, uten mål. Til den som tegner videre i AutoCAD.'
+        : `<b>Mottakeren får:</b> ${what} · ${fmt === 'pdf' ? 'PDF ' + lay : 'bilde (PNG)'}${extra}`;
     };
     el.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { fmt = b.dataset.f; upd(); });
     el.querySelectorAll('[data-w]').forEach(b => b.onclick = () => { ex.what = b.dataset.w; upd(); });

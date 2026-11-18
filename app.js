@@ -364,7 +364,7 @@ const SIDE_ARW = { L: '←', R: '→', U: '↑', D: '↓' };
 function invalidateDims() { if (P) P.points.forEach(p => p._d = null); }
 
 function applySnap(p) {
-  if (!S.snap || !P.mmPerUnit) return;
+  if (S.noSnap || !S.snap || !P.mmPerUnit) return;
   const mpu = P.mmPerUnit, step = S.snap / mpu;
   const d = dimsOf(p);
   if (d.xs) {
@@ -383,6 +383,7 @@ function applySnap(p) {
 // juster mot andre punkter (samme X eller Y) – gjør det lett å lage rette rader
 function alignSnap(p) {
   guides = [];
+  if (S.noSnap) return;
   const tol = 10 / view.s;
   let bx = null, by = null, dx = tol, dy = tol;
   for (const q of P.points) {
@@ -1099,6 +1100,16 @@ function rowDialog() {
 
 /* Målestokk */
 $('#calBtn').onclick = () => P && askScale();
+function updSnapBtn() {
+  const b = $('#snapBtn'), on = !S.noSnap;
+  b.classList.toggle('on', on); b.setAttribute('aria-checked', on ? 'true' : 'false');
+  $('small', b).textContent = on ? 'på' : 'av – fritt';
+}
+$('#snapBtn').onclick = () => {
+  S.noSnap = !S.noSnap; saveS(); updSnapBtn();
+  toast(S.noSnap ? 'Fritt: festes ikke til vegg, rutenett eller linje' : 'Fest på: vegg, rutenett og linje');
+};
+$('#fitBtn').onclick = () => P && fitView();
 function askScale(onDone) {
   const isPdf = P.kind === 'pdf';
   if (!isPdf) { openSettings(); return; }
@@ -1246,17 +1257,22 @@ function openList() {
 
 /* Meny */
 function openMenu() {
-  const isPdf = P.kind === 'pdf';
+  const isPdf = P.kind === 'pdf', eq = eqActive();
   dialog(`<h2>${esc(P.name)}</h2><div class="menu">
-    <button data-a="info">🏷 Prosjektinfo (tittelfelt)</button>
-    ${eqActive() ? '<button data-a="mat">📋 Materialliste</button><button data-a="kurs">⚡ Kursliste</button>' : '<button data-a="list">☰ Punktliste</button><button data-a="joist">▥ Bjelkelag</button><button data-a="mat">📋 Materialliste</button>'}
-    <button data-a="fit">⤢ Tilpass visning</button>
-    <button data-a="set">⚙ Innstillinger</button>
-    ${isPdf ? '<button data-a="scale">📏 Målestokk / kalibrer</button>' : '<button data-a="layers">▤ Lag og vegger</button>'}
-    <button data-a="exp">⬇ Eksporter (PDF${isPdf ? '' : ', DXF'} eller bilde)</button>
-    <button data-a="bak">💾 Eksporter prosjekt (backup)</button>
-    <button data-a="ren">✎ Gi nytt navn</button>
-    ${eqActive() ? '<button data-a="eqreset" class="danger">Tilbakestill alt utstyr til prosjektert</button>' : '<button data-a="clr" class="danger">Slett alle punkter</button>'}
+    <div class="mh">Prosjekt</div>
+    <button data-a="info">Prosjektinfo (tittelfelt)</button>
+    <button data-a="ren">Gi nytt navn</button>
+    <div class="mh">Lister</div>
+    ${eq ? '<button data-a="mat">Materialliste</button><button data-a="kurs">Kursliste</button>' : '<button data-a="list">Punktliste</button><button data-a="mat">Materialliste</button>'}
+    <div class="mh">Del og lagre</div>
+    <button data-a="exp">Del tegning (PDF${isPdf ? '' : ', DXF'} eller bilde)</button>
+    <button data-a="bak">Sikkerhetskopi av prosjekt med bilder</button>
+    <div class="mh">Tegning</div>
+    ${isPdf ? '<button data-a="scale">Målestokk / kalibrer</button>' : '<button data-a="layers">Lag og vegger</button>'}
+    ${eq ? '' : '<button data-a="joist">Bjelkelag</button>'}
+    <button data-a="set">Innstillinger</button>
+    <div class="mh">&nbsp;</div>
+    ${eq ? '<button data-a="eqreset" class="danger">Tilbakestill alt utstyr til prosjektert</button>' : '<button data-a="clr" class="danger">Slett alle punkter</button>'}
   </div><div class="btns"><button data-x>Lukk</button></div>`, (el, close) => {
     $('[data-x]', el).onclick = close;
     el.querySelectorAll('[data-a]').forEach(b => b.onclick = () => {
@@ -1390,7 +1406,9 @@ function updateTitle() {
   if (P.kind === 'pdf' && !P.mmPerUnit) parts.push('ikke kalibrert');
   if (typeof eqActive === 'function' && eqActive()) { const n = changeCount(); if (n) parts.push(n + (n === 1 ? ' endring' : ' endringer')); }
   $('#edTitle').innerHTML = `${esc(P.name)}<small>${esc(parts.join(' · '))}</small>`;
-  $('#calWarn').classList.toggle('on', P.kind === 'pdf' && !P.mmPerUnit && !!doc);
+  const cal = P.kind === 'pdf' && !P.mmPerUnit && !!doc;
+  $('#calWarn').classList.toggle('on', cal); $('#stage').classList.toggle('cal', cal);
+  updSnapBtn();
 }
 
 async function openProject(p, fresh) {

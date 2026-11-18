@@ -180,7 +180,7 @@ function changeCount() { return EQ.items.filter(i => i.added || i.del || isChang
 /* ---------- Plassering med vegg-magnet ---------- */
 function placeItem(it, ux, uy) {
   const info = infoOf(it.block), mpu = P.mmPerUnit || 1;
-  if (!info.wall) { it.x = ux; it.y = uy; it.snap = -1; return; }
+  if (!info.wall || S.noSnap) { it.x = ux; it.y = uy; it.snap = -1; it._wn = null; return; }
   const w = doc.nearestWall(ux, uy, Math.max(900 / mpu, 45 / view.s), it.snap ?? -1);
   if (!w) { it.x = ux; it.y = uy; it.snap = -1; return; }
   it.x = w.px + w.nx * info.off; it.y = w.py + w.ny * info.off;
@@ -213,6 +213,7 @@ function drawBlock(ctx, v, dpr, g, x, y, r, sx, sy, col, alpha, k) {
 function drawEquip(ctx, v, dpr, o, W, H) {
   const L = doc.r.layers, k = o.k || 1;
   const showChg = !o.export && S.showChg !== false && edMode === 'utstyr';
+  drawKursHl(ctx, v, dpr, o);
   drawRuns(ctx, v, dpr, o);
   drawKurs(ctx, v, dpr, o);
   const list = (o.export ? !expDims() : edMode === 'utstyr') ? allItems() : EQ.items;
@@ -324,7 +325,7 @@ function groupItems() { return [...eqSet].map(itemByKey).filter(Boolean); }
 
 function eqTap(x, y, g) {
   if (eqTool === 'text') { textTap(x, y, g); return; }
-  if (g.hk) { editKurs(g.hk); return; }
+  if (g.hk) { runSel = null; eqSelect(g.hk); return; }
   if (eqTool === 'run') {
     if (g.hi) {
       if (!runStart) runStart = g.hi.key;
@@ -543,6 +544,35 @@ function ensureSelVisible() {
   if (a.x < m || a.x > cw - m) dx = cw / 2 - a.x;
   if (dx || dy) { view.tx += dx; view.ty += dy; afterView(); }
 }
+let hlKurs = null; // { key, keys:Set } – utstyr på samme kurs som valgt symbol
+function findKurs(it) {
+  if (!it || typeof circuitItems !== 'function') return null;
+  const ks = Object.keys(P.eq.kurs || {});
+  const order = kursOf(it.key) ? [it.key, ...ks] : ks;
+  for (const k of order) {
+    if (!itemByKey(k)) continue;
+    const items = circuitItems(k);
+    if (items.some(q => q.key === it.key)) return { key: k, keys: new Set(items.map(q => q.key)) };
+  }
+  return null;
+}
+function drawKursHl(ctx, v, dpr, o) {
+  if (o.export || !hlKurs) return;
+  ctx.save(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.lineCap = 'round'; ctx.strokeStyle = 'rgba(249,115,22,.45)'; ctx.lineWidth = 9;
+  for (const run of (P.eq.runs || [])) {
+    if (!hlKurs.keys.has(run.a) || !hlKurs.keys.has(run.b)) continue;
+    const g = runGeom(run); if (!g) continue;
+    ctx.beginPath(); g.pts.forEach((p, i) => { const x = p.x * v.s + v.tx, y = p.y * v.s + v.ty; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(249,115,22,.22)'; ctx.strokeStyle = '#f97316'; ctx.lineWidth = 2;
+  for (const k of hlKurs.keys) {
+    const it = itemByKey(k); if (!it || it.del) continue;
+    const c = itemCenter(it), r = Math.max(14, itemRad(it) * v.s + 6);
+    ctx.beginPath(); ctx.arc(c.x * v.s + v.tx, c.y * v.s + v.ty, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  }
+  ctx.restore();
+}
 function updateEqBar() {
   const bar = $('#eqbar');
   if (eqDragging()) return;
@@ -550,6 +580,7 @@ function updateEqBar() {
   const it = !run && eqSel && itemByKey(eqSel);
   const te = eqTool === 'text' && txtSel && allTextDisp().find(q => q.key === txtSel);
   let title = '', sub = '', acts = '', hint = '';
+  hlKurs = it && !it.del && eqSet.size <= 1 ? findKurs(it) : null;
   if (eqSet.size > 1 && eqTool === 'sel' && eqActive()) {
     title = `${eqSet.size} symboler valgt`;
     hint = 'Dra ett av dem for å flytte alle samlet.';
@@ -568,7 +599,9 @@ function updateEqBar() {
     title = 'Føring'; sub = 'Skjult anlegg';
     acts = abtn('rflip', 'flip', 'Bøy motsatt') + abtn('rbend', 'bend', 'Mer/mindre bue') + abtn('rdel', 'del', 'Slett', 'dz');
   } else {
-    const k = kursOf(it.key), kt = k ? kursText(k).replace('\n', ' ') : '';
+    const k = kursOf(it.key);
+    const hk = hlKurs && kursOf(hlKurs.key);
+    const kt = hk ? kursText(hk).replace('\n', ' ') + ` (${hlKurs.keys.size} på kursen)` : '';
     const room = typeof roomOf === 'function' ? roomOf(it) : '';
     const nph = typeof photosOf === 'function' ? photosOf(it.key).length : 0;
     const kb = abtn('kurs', `<b>${k ? esc(kursText(k).split('\n').pop()) : '-F'}</b>`, k ? 'Kurs' : 'Kursmerke', k ? 'on' : '');
@@ -1303,7 +1336,7 @@ function drawDragFx(ctx) {
     ctx.beginPath(); ctx.moveTo(f.x, f.y); ctx.lineTo(e.x, e.y);
     ctx.moveTo(e.x - nx * 8 - ny * 6, e.y - ny * 8 + nx * 6); ctx.lineTo(e.x, e.y); ctx.lineTo(e.x - nx * 8 + ny * 6, e.y - ny * 8 - nx * 6); ctx.stroke();
     txt = 'Festes til vegg';
-  } else txt = wall ? 'Ingen vegg i nærheten' : 'Plasseres fritt';
+  } else txt = S.noSnap ? 'Fritt – festes ikke' : wall ? 'Ingen vegg i nærheten' : 'Plasseres fritt';
   ctx.restore();
   const c = S_(itemCenter(it));
   if (tag.textContent !== txt) tag.textContent = txt;

@@ -105,6 +105,9 @@
   .dlg { width: 100%; max-width: 440px; max-height: 86vh; overflow-y: auto; background: var(--panel);
     border: 1px solid var(--line); border-radius: 16px; padding: 16px; box-shadow: 0 20px 50px rgba(0,0,0,.5); }
   .dlg h2 { margin: 0 0 10px; font-size: 18px; }
+  .dlg .sumbox { background: #0b1220; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; color: var(--text); }
+  .menu .mh { font-size: 12px; color: var(--muted); margin: 12px 2px 6px; font-weight: 600; }
+  .menu .mh:first-child { margin-top: 0; }
   .dlg .warnbox { background: rgba(249,115,22,.14); border: 1px solid #f97316; color: var(--text); border-radius: 10px; padding: 8px 10px; }
   .dlg p { margin: 6px 0 10px; color: var(--muted); font-size: 14px; }
   .dlg .btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; flex-wrap: wrap; }
@@ -237,6 +240,17 @@
   #calWarn { position: absolute; left: 10px; right: 10px; bottom: 10px; display: none; align-items: center; gap: 10px; padding: 8px 10px;
     background: #fef3c7; color: #78350f; border: 2px solid #f59e0b; border-radius: 12px; z-index: 3; }
   #calWarn.on { display: flex; }
+  .fab { position: absolute; bottom: 10px; z-index: 2; display: flex; align-items: center; gap: 6px; height: 44px; padding: 0 10px;
+    background: rgba(17,24,39,.88); color: #fff; border: none; border-radius: 12px; }
+  #fitBtn { right: 10px; width: 44px; padding: 0; justify-content: center; }
+  #snapBtn { left: 10px; }
+  #snapBtn span { display: flex; flex-direction: column; line-height: 1.1; text-align: left; }
+  #snapBtn b { font-size: 12px; } #snapBtn small { font-size: 11px; color: #cbd5e1; }
+  #snapBtn .off { display: none; }
+  #snapBtn:not(.on) { background: #fff; color: #111; box-shadow: 0 0 0 2px #111827; }
+  #snapBtn:not(.on) .off { display: inline; } #snapBtn:not(.on) small { color: #374151; }
+  #stage.cal .fab { bottom: 80px; }
+  #ed.eqsel .fab { display: none; }
   #calWarn span { flex: 1; display: flex; flex-direction: column; line-height: 1.2; }
   #calWarn small { font-size: 12px; }
   #calWarn button { background: #78350f; color: #fff; border-color: #78350f; font-weight: 700; }
@@ -281,6 +295,8 @@
     <div id="npick"></div>
     <div id="toolPop"></div>
     <div id="dragTag"></div>
+    <button id="snapBtn" class="fab on" role="switch" aria-checked="true" title="Fest til vegg og rutenett"><svg class="ic" viewBox="0 0 24 24"><path d="M6 3v8a6 6 0 0 0 12 0V3h-4v8a2 2 0 0 1-4 0V3z"/><path d="M6 7h4M14 7h4"/><path class="off" d="M3 3l18 18"/></svg><span><b>Fest</b><small>på</small></span></button>
+    <button id="fitBtn" class="fab" aria-label="Tilpass visning" title="Tilpass visning"><svg class="ic" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
     <div id="calWarn" role="status"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></svg><span><b>Ikke kalibrert</b><small>Målene er ikke gyldige ennå</small></span><button id="calBtn">Kalibrer</button></div>
     <div id="banner"><span id="bannerTxt"></span><button id="bannerBtn">Avbryt</button></div>
     <div id="loading">Laster tegning …</div>
