@@ -1,4 +1,4 @@
-const CACHE = 'elektrotegning-v15';
+const CACHE = 'elektrotegning-v16';
 const FILES = ['./', './index.html', './app.js', './dxf.js', './eq.js', './pdfexport.js', './sync.js', './manifest.webmanifest',
   './vendor/pdf.min.js', './vendor/pdf.worker.min.js', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png'];
 self.addEventListener('install', e => {
@@ -7,12 +7,18 @@ self.addEventListener('install', e => {
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
-// Hurtigbuffer først (virker offline), oppdaterer i bakgrunnen
+// Nett først (alltid nyeste versjon), hurtigbuffer hvis nettet er tregt eller borte
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
-  e.respondWith(caches.open(CACHE).then(async c => {
+  e.respondWith((async () => {
+    const c = await caches.open(CACHE);
+    const net = fetch(e.request, { cache: 'no-cache' }).then(r => { if (r.ok) c.put(e.request, r.clone()); return r; });
+    const slow = new Promise(res => setTimeout(res, 2500, null));
+    try {
+      const r = await Promise.race([net, slow]);
+      if (r) return r;
+    } catch (err) { }
     const hit = await c.match(e.request, { ignoreSearch: true });
-    const net = fetch(e.request).then(r => { if (r.ok) c.put(e.request, r.clone()); return r; }).catch(() => hit);
     return hit || net;
-  }));
+  })());
 });

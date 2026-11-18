@@ -631,7 +631,7 @@ cv.addEventListener('pointerdown', e => {
     const hi = hk || eqTool === 'text' ? null : hitItem(p.x, p.y);
     gest = { type: 'pending', x0: p.x, y0: p.y, hi, hk, ht, mod: e.ctrlKey || e.shiftKey || e.metaKey, v0: { ...view } };
     if (ht) lpTimer = setTimeout(() => startTextDrag(ht), 380);
-    if (hk) lpTimer = setTimeout(() => { if (gest && gest.type === 'pending') { gest.type = 'kdrag'; try { navigator.vibrate && navigator.vibrate(15); } catch (e) { } } }, 380);
+    if (hk) lpTimer = setTimeout(() => { if (gest && gest.type === 'pending') { pushUndo(); gest.type = 'kdrag'; try { navigator.vibrate && navigator.vibrate(15); } catch (e) { } } }, 380);
     else if (hi) lpTimer = setTimeout(() => startItemDrag(hi, p.x, p.y), 380);
   } else if (ptrs.size === 1) {
     const hp = mode === 'edit' ? hitPoint(p.x, p.y) : null;
@@ -664,7 +664,7 @@ cv.addEventListener('pointermove', e => {
   if (gest.type === 'pending' && e.pointerType === 'mouse' && Math.hypot(p.x - gest.x0, p.y - gest.y0) > 4 && (gest.hp || gest.hi || gest.hk || gest.ht)) {
     clearTimeout(lpTimer);
     if (gest.ht) startTextDrag(gest.ht);
-    else if (gest.hk) gest.type = 'kdrag';
+    else if (gest.hk) { pushUndo(); gest.type = 'kdrag'; }
     else if (gest.hi) startItemDrag(gest.hi, gest.x0, gest.y0);
     else startDrag(gest.hp, gest.x0, gest.y0);
   }
@@ -1463,7 +1463,17 @@ if (!standalone && /iP(hone|ad|od)/.test(navigator.userAgent)) {
   $('#homeHint').insertAdjacentHTML('beforeend', '<br><br><b>Installer på iPhone:</b> Del-knappen → «Legg til på Hjem-skjerm».');
 }
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-  navigator.serviceWorker.register('sw.js').catch(() => { });
+  const hadSW = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    // se etter ny versjon når appen kommer i forgrunnen
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => { }); });
+  }).catch(() => { });
+  // ny versjon tatt i bruk: last inn på nytt når det ikke forstyrrer
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadSW) return;
+    if (!P) location.reload();
+    else setTimeout(() => toast('Ny versjon lastet ned – tas i bruk neste gang du åpner en tegning'), 500);
+  });
 }
 
 /* ---------------- PC: peker og tastatur ---------------- */
