@@ -1233,20 +1233,20 @@ function renderExportCanvas(maxSide, footer, area) {
   doc.draw(ctx, v, 1, { main: false, k: 1, export: true });
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   const saveLabels = labels;
-  if (edMode === 'mal' || doc.kind !== 'dxf') drawOverlay(ctx, v, { export: true, k });
+  if (expDims()) drawOverlay(ctx, v, { export: true, k });
   labels = saveLabels;
   if (footer === false) return c;
   // bunntekst
   const fh = Math.round(18 * W / 1800);
   ctx.fillStyle = '#fff'; ctx.fillRect(0, H, W, c.height - H);
   ctx.fillStyle = '#111'; ctx.font = `600 ${fh}px system-ui`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  const foot = eqActive() ? `${P.name} – installasjonstegning – ${new Date().toLocaleDateString('no-NO')}` : `${P.name} – ${P.points.length} punkter – mål i mm til vegg (blå = X, lilla = Y) – ${new Date().toLocaleDateString('no-NO')}`;
+  const foot = !expDims() ? `${P.name} – installasjonstegning – ${new Date().toLocaleDateString('no-NO')}` : `${P.name} – ${P.points.length} punkter – mål i mm til vegg (blå = X, lilla = Y) – ${new Date().toLocaleDateString('no-NO')}`;
   ctx.fillText(foot, fh, H + (c.height - H) / 2);
   return c;
 }
 function exportImage() {
   const c = renderExportCanvas();
-  c.toBlob(blob => { if (blob) shareOrDownload(blob, safeName(P.name) + (eqActive() ? '_installasjon.png' : '_takpunkter.png'), P.name); else toast('Bildet ble for stort'); }, 'image/png');
+  c.toBlob(blob => { if (blob) shareOrDownload(blob, safeName(P.name) + (!expDims() ? '_installasjon.png' : '_takpunkter.png'), P.name); else toast('Bildet ble for stort'); }, 'image/png');
 }
 function blobToB64(blob) {
   return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(blob); });

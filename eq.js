@@ -214,7 +214,7 @@ function drawEquip(ctx, v, dpr, o, W, H) {
   const showChg = !o.export && S.showChg !== false && edMode === 'utstyr';
   drawRuns(ctx, v, dpr, o);
   drawKurs(ctx, v, dpr, o);
-  const list = edMode === 'utstyr' || o.export ? allItems() : EQ.items;
+  const list = (o.export ? !expDims() : edMode === 'utstyr') ? allItems() : EQ.items;
   for (const it of list) {
     if (!doc.show[it.li]) continue;
     const g = doc.geom(it.block);

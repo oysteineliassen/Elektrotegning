@@ -5,12 +5,18 @@ const PAPER = { A4: [297, 210], A3: [420, 297], A2: [594, 420], A1: [841, 594] }
 const SCALES = [10, 20, 25, 50, 100, 200, 250, 500, 1000];
 const MM = 72 / 25.4;
 
+// Mål på takpunktene tas bare med når «Takpunkter med mål» er valgt (eller underlaget er PDF)
+function expDims() { return !doc || doc.kind !== 'dxf' || !!(S.exp && S.exp.what === 'mal'); }
 function openExport() {
   const isDxf = doc.kind === 'dxf';
-  const what = eqActive() ? 'installasjonstegning (uten mål)' : 'takpunkter med mål';
   const opt = (arr, cur) => arr.map(([v, t]) => `<option value="${v}" ${String(v) === String(cur) ? 'selected' : ''}>${t}</option>`).join('');
   const ex = S.exp || (S.exp = { fmt: 'pdf', paper: 'A3', scale: 'auto', area: 'all' });
-  dialog(`<h2>Eksporter</h2><p>Eksporterer ${what}. Bytt fane øverst for den andre tegningen.</p>
+  if (!ex.what) ex.what = 'inst';
+  dialog(`<h2>Eksporter</h2>
+    ${isDxf ? `<div id="xWhat"><label class="f">Innhold</label><div class="seg">
+      <button data-w="inst">Installasjonstegning<small>til overlevering – uten mål</small></button>
+      <button data-w="mal">Takpunkter med mål<small>for utboring på bygg</small></button></div></div>` : ''}
+    <label class="f">Format</label>
     <div class="seg" style="grid-template-columns:repeat(${isDxf ? 3 : 2},1fr)">
       <button data-f="pdf">PDF</button>${isDxf ? '<button data-f="dxf">DXF</button>' : ''}<button data-f="png">Bilde</button></div>
     <div id="pdfOpt">
@@ -24,6 +30,8 @@ function openExport() {
     let fmt = isDxf || ex.fmt !== 'dxf' ? ex.fmt : 'pdf';
     const upd = () => {
       el.querySelectorAll('[data-f]').forEach(b => b.classList.toggle('on', b.dataset.f === fmt));
+      el.querySelectorAll('[data-w]').forEach(b => b.classList.toggle('on', b.dataset.w === ex.what));
+      const xw = $('#xWhat', el); if (xw) xw.style.display = fmt === 'dxf' ? 'none' : '';
       $('#pdfOpt', el).style.display = fmt === 'pdf' ? '' : 'none';
       $('#dxfInfo', el).style.display = fmt === 'dxf' ? '' : 'none';
       ex.paper = $('#xPaper', el).value; ex.scale = $('#xScale', el).value; ex.area = $('#xArea', el).value; ex.fmt = fmt;
@@ -33,6 +41,7 @@ function openExport() {
       }
     };
     el.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { fmt = b.dataset.f; upd(); });
+    el.querySelectorAll('[data-w]').forEach(b => b.onclick = () => { ex.what = b.dataset.w; upd(); });
     el.querySelectorAll('select').forEach(s => s.onchange = upd);
     upd();
     $('[data-x]', el).onclick = close;
@@ -250,7 +259,7 @@ function pdfContent(L) {
     }
   }
   // mål for takpunkter
-  if (edMode === 'mal') {
+  if (expDims()) {
     for (const p of P.points) {
       const d = dimsOf(p);
       for (const [side, col] of [[d.xs, '#2563eb'], [d.ys, '#c026d3']]) {
@@ -267,7 +276,7 @@ function pdfContent(L) {
   pen.ops.push('Q');
   // tittelfelt
   const date = new Date().toLocaleDateString('no-NO');
-  const title = `${P.name} – ${edMode === 'mal' ? 'takpunkter, mål i mm til vegg' : 'installasjonstegning'} – målestokk 1:${L.N} (${L.paper}) – ${date}`;
+  const title = `${P.name} – ${expDims() ? 'takpunkter, mål i mm til vegg' : 'installasjonstegning'} – målestokk 1:${L.N} (${L.paper}) – ${date}`;
   pen.ops.push(`0.6 0.6 0.6 RG 0.3 w [] 0 d ${pen.n(L.m * MM)} ${pen.n(L.m * MM)} ${pen.n(L.aw * MM)} ${pen.n((L.ah + L.foot) * MM)} re S`);
   pen.ops.push(`${pen.n(L.m * MM)} ${pen.n((L.m + L.foot) * MM)} m ${pen.n((L.m + L.aw) * MM)} ${pen.n((L.m + L.foot) * MM)} l S`);
   pen.ops.push(`BT 0 0 0 rg /F1 8 Tf 1 0 0 1 ${pen.n((L.m + 3) * MM)} ${pen.n((L.m + 2.8) * MM)} Tm ${pdfStr(title)} Tj ET`);
@@ -295,6 +304,6 @@ async function exportPdf(ex) {
         + `BT 0 0 0 rg /F1 8 Tf 1 0 0 1 ${((L.m + 3) * MM).toFixed(2)} ${((L.m + 2.8) * MM).toFixed(2)} Tm ${pdfStr(`${P.name} – takpunkter, mål i mm – målestokk 1:${L.N} (${ex.paper}) – ${date}`)} Tj ET`;
       bytes = await makePdf(L.pw * MM, L.ph * MM, content, { w: c.width, h: c.height, data });
     }
-    await shareOrDownload(new Blob([bytes], { type: 'application/pdf' }), safeName(P.name) + (edMode === 'utstyr' ? '_installasjon' : '_takpunkter') + '.pdf', P.name);
+    await shareOrDownload(new Blob([bytes], { type: 'application/pdf' }), safeName(P.name) + (expDims() ? '_takpunkter' : '_installasjon') + '.pdf', P.name);
   } catch (e) { console.error(e); toast('Kunne ikke lage PDF: ' + (e.message || e)); }
 }
