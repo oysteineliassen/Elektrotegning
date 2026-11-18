@@ -629,7 +629,7 @@ cv.addEventListener('pointerdown', e => {
     const ht = eqTool === 'text' ? hitText(p.x, p.y) : null;
     const hk = eqTool === 'sel' ? hitKurs(p.x, p.y) : null;
     const hi = hk || eqTool === 'text' ? null : hitItem(p.x, p.y);
-    gest = { type: 'pending', x0: p.x, y0: p.y, hi, hk, ht, v0: { ...view } };
+    gest = { type: 'pending', x0: p.x, y0: p.y, hi, hk, ht, mod: e.ctrlKey || e.shiftKey || e.metaKey, v0: { ...view } };
     if (ht) lpTimer = setTimeout(() => startTextDrag(ht), 380);
     if (hk) lpTimer = setTimeout(() => { if (gest && gest.type === 'pending') { gest.type = 'kdrag'; try { navigator.vibrate && navigator.vibrate(15); } catch (e) { } } }, 380);
     else if (hi) lpTimer = setTimeout(() => startItemDrag(hi, p.x, p.y), 380);
@@ -1324,7 +1324,7 @@ async function openProject(p, fresh) {
   $('#modeSeg').classList.toggle('on', doc.kind === 'dxf');
   eqSel = null; eqArm = null;
   if (doc.kind === 'dxf') eqInit();
-  edMode = 'mal'; setEdMode('mal');
+  edMode = 'mal'; setEdMode(doc.kind === 'dxf' ? 'utstyr' : 'mal');
   resize();
   let v = null;
   try { v = JSON.parse(localStorage.getItem('tp-view-' + p.id) || 'null'); } catch (e) { }
@@ -1486,7 +1486,7 @@ document.addEventListener('keydown', e => {
     else if (mode === 'calib') $('#bannerBtn').click();
     else if (eq && eqTool === 'run') setRunTool(false);
     else if (eq && eqTool === 'text' && !txtSel) setTextTool(false);
-    else if (eq && txtSel) { txtSel = null; updateEqBar(); req(); }
+    else if (eq && txtSel) { txtClear(); txtMulti = false; updateEqBar(); req(); }
     else if (eq && eqArm) setArm(null);
     else { select(null); if (eq) { eqSel = null; runSel = null; updateEqBar(); req(); } }
     return;

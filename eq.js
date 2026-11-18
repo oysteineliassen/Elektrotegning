@@ -460,7 +460,12 @@ function updateEqBar() {
   if (!eqActive() || (!te && !run && (!it || it.del)) || (gest && (gest.type === 'idrag' || gest.type === 'tdrag'))) { bar.classList.remove('on'); bar.dataset.k = ''; return; }
   let html;
   const kb = it ? `<button class="num" data-a="kurs" title="Kursnummer (første boks etter tavla)">${kursOf(it.key) ? esc(kursText(kursOf(it.key)).replace('\n', '')) : 'Kurs'}</button>` : '';
-  if (te) html = `<b>Tekst</b><button data-a="tedit" title="Endre tekst">✎</button>` + (!te.added && txtEd(te.key) ? `<button data-a="treset" title="Tilbake til original">↺</button>` : '') + `<button data-a="tdel" title="Slett">🗑</button>`;
+  if (te) {
+    const sel = selTexts(), n = sel.length;
+    html = `<b>${n > 1 ? n + ' tekster' : 'Tekst'}</b>` + (n === 1 ? `<button data-a="tedit" title="Endre tekst">✎</button>` : '')
+      + (sel.some(q => !q.added && txtEd(q.key)) ? `<button data-a="treset" title="Tilbake til original">↺</button>` : '')
+      + `<button data-a="tmulti" title="Velg flere" style="${txtMulti ? 'background:#2563eb' : ''}">⊞</button><button data-a="tdel" title="Slett">🗑</button>`;
+  }
   else if (it && it.isPt) html = `<b>${esc((TYPES[it.pt.type] || TYPES.downlight).name)}</b>${kb}<button data-a="del" title="Slett">🗑</button>`;
   else if (run) html = `<b>Føring</b><button data-a="rflip" title="Bøy andre veien">⇅</button><button data-a="rbend" title="Mer/mindre bue">⌒</button><button data-a="rdel" title="Slett">🗑</button>`;
   else html = `<b>${esc(prettyBlock(it.block))}${it.added ? ' · ny' : isMoved(it) ? ' · flyttet' : ''}</b>`
@@ -492,7 +497,7 @@ function positionEqBar() {
   if (!a) return;
   const bw = bar.offsetWidth, bh = bar.offsetHeight;
   let top = a.y - a.r - bh - 10;
-  if (top < 8) top = a.y + a.r + 10;
+  if (top < 8) top = (a.yb != null ? a.yb : a.y) + a.r + 10;
   bar.style.left = clamp(a.x - bw / 2, 8, cw - bw - 8) + 'px';
   bar.style.top = clamp(top, 8, ch - bh - 8) + 'px';
   const np = $('#npick');
@@ -513,7 +518,7 @@ function openNPick(it) {
   positionEqBar();
 }
 function eqAction(a) {
-  if (a === 'tedit' || a === 'treset' || a === 'tdel') return textAction(a);
+  if (a === 'tedit' || a === 'treset' || a === 'tdel' || a === 'tmulti') return textAction(a);
   if (a[0] === 'r' && a !== 'rot' && a !== 'reset') return runAction(a);
   const it = itemByKey(eqSel);
   if (!it) return;
@@ -684,7 +689,13 @@ function kursExport(layer) {
 }
 
 /* ---------- Tekster: flytt, endre, slett og legg til ---------- */
-let txtSel = null;
+let txtSel = null, txtSet = new Set(), txtMulti = false;
+function txtClear() { txtSel = null; txtSet.clear(); }
+function txtSelect(key, add) {
+  if (add) { if (txtSet.has(key)) { txtSet.delete(key); txtSel = [...txtSet].pop() || null; } else { txtSet.add(key); txtSel = key; } }
+  else { txtSet = new Set([key]); txtSel = key; }
+}
+function selTexts() { const all = allTextDisp(); return all.filter(e => txtSet.has(e.key)); }
 function txtStore() { if (!P.eq) P.eq = { edits: {}, added: [] }; return (P.eq.texts = P.eq.texts || { edits: {}, added: [] }); }
 function tKey(t) { return t && t.rec ? 't' + t.rec.ln : null; }
 function txtEd(k) { return k && P && P.eq && P.eq.texts ? P.eq.texts.edits[k] : null; }
@@ -746,8 +757,9 @@ function drawAddedTexts(ctx, v, dpr, W, H) {
   ctx.restore();
 }
 function drawTextSel(ctx, v, dpr) {
-  const e = allTextDisp().find(q => q.key === txtSel);
-  if (!e) return;
+  for (const e of selTexts()) drawTextBox(ctx, v, dpr, e);
+}
+function drawTextBox(ctx, v, dpr, e) {
   const d = e.d, b = textBox(d), c = Math.cos(-d.rot), s = Math.sin(-d.rot), pad = 4 / v.s;
   const P4 = [[b.x0 - pad, b.y0 - pad], [b.x1 + pad, b.y0 - pad], [b.x1 + pad, b.y1 + pad], [b.x0 - pad, b.y1 + pad]]
     .map(([lx, ly]) => [(d.x + c * lx - s * ly) * v.s + v.tx, (d.y + s * lx + c * ly) * v.s + v.ty]);
@@ -756,15 +768,24 @@ function drawTextSel(ctx, v, dpr) {
   ctx.beginPath(); P4.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.closePath(); ctx.stroke();
   ctx.restore();
 }
+// ramme rundt alle valgte tekster (skjerm) – handlingslinjen legges utenfor den
 function txtAnchor() {
-  const e = allTextDisp().find(q => q.key === txtSel);
-  if (!e) return null;
-  return { x: e.d.x * view.s + view.tx, y: e.d.y * view.s + view.ty, r: Math.max(16, e.d.h * view.s) };
+  const sel = selTexts();
+  if (!sel.length) return null;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const e of sel) {
+    const d = e.d, b = textBox(d), c = Math.cos(-d.rot), s = Math.sin(-d.rot);
+    for (const [lx, ly] of [[b.x0, b.y0], [b.x1, b.y0], [b.x1, b.y1], [b.x0, b.y1]]) {
+      const X = (d.x + c * lx - s * ly) * view.s + view.tx, Y = (d.y + s * lx + c * ly) * view.s + view.ty;
+      x0 = Math.min(x0, X); x1 = Math.max(x1, X); y0 = Math.min(y0, Y); y1 = Math.max(y1, Y);
+    }
+  }
+  return { x: (x0 + x1) / 2, y: y0, r: 6, yb: y1 };
 }
 function setTextTool(on) {
   if (on) { if (eqTool === 'run') setRunTool(false); setArm(null); eqSel = null; runSel = null; }
   eqTool = on ? 'text' : 'sel';
-  txtSel = null;
+  txtClear(); txtMulti = false;
   $('#txtBtn').classList.toggle('on', on);
   if (on) setBanner('Tekst: trykk = endre · hold og dra = flytt · tomt sted = ny tekst', 'Ferdig', () => setTextTool(false));
   else setBanner(null);
@@ -772,38 +793,44 @@ function setTextTool(on) {
 }
 $('#txtBtn').onclick = () => setTextTool(eqTool !== 'text');
 function textTap(x, y, g) {
-  if (g.ht) { txtSel = g.ht.key; updateEqBar(); req(); return; }
-  if (txtSel) { txtSel = null; updateEqBar(); req(); return; }
+  if (g.ht) { txtSelect(g.ht.key, txtMulti || g.mod); updateEqBar(); req(); return; }
+  if (txtSel) { txtClear(); txtMulti = false; updateEqBar(); req(); return; }
   newTextAt(toUnit(x, y));
 }
 function startTextDrag(e) {
   if (!gest || gest.type !== 'pending') return;
   pushUndo();
-  gest.type = 'tdrag'; gest.txt = e; gest.u0 = toUnit(gest.x0, gest.y0);
-  if (e.added) gest.o0 = { x: e.added.x, y: e.added.y };
-  else { const ed = txtStore().edits[e.key] || {}; gest.o0 = { x: ed.dx || 0, y: ed.dy || 0 }; }
-  txtSel = e.key; updateEqBar();
+  gest.type = 'tdrag'; gest.u0 = toUnit(gest.x0, gest.y0);
+  if (!txtSet.has(e.key)) txtSelect(e.key, txtMulti || gest.mod);
+  else txtSel = e.key;
+  gest.txts = selTexts().map(q => ({ q, o0: q.added ? { x: q.added.x, y: q.added.y } : (() => { const ed = txtStore().edits[q.key] || {}; return { x: ed.dx || 0, y: ed.dy || 0 }; })() }));
+  updateEqBar();
   try { navigator.vibrate && navigator.vibrate(15); } catch (er) { }
   req();
 }
 function moveText(p) {
-  const u = toUnit(p.x, p.y), dx = u.x - gest.u0.x, dy = u.y - gest.u0.y, e = gest.txt;
-  if (e.added) { e.added.x = gest.o0.x + dx; e.added.y = gest.o0.y + dy; }
-  else { const st = txtStore(), ed = st.edits[e.key] || (st.edits[e.key] = {}); ed.dx = gest.o0.x + dx; ed.dy = gest.o0.y + dy; }
+  const u = toUnit(p.x, p.y), dx = u.x - gest.u0.x, dy = u.y - gest.u0.y, st = txtStore();
+  for (const { q, o0 } of gest.txts) {
+    if (q.added) { q.added.x = o0.x + dx; q.added.y = o0.y + dy; }
+    else { const ed = st.edits[q.key] || (st.edits[q.key] = {}); ed.dx = o0.x + dx; ed.dy = o0.y + dy; }
+  }
   req();
 }
 function endTextDrag() { gest.type = 'end'; save(); updateEqBar(); req(); }
 function textAction(a) {
-  const e = allTextDisp().find(q => q.key === txtSel);
-  if (!e) return;
+  const sel = selTexts();
+  if (!sel.length && a !== 'tmulti') return;
   const st = txtStore();
-  if (a === 'tedit') return editTextDlg(e);
+  if (a === 'tmulti') { txtMulti = !txtMulti; updateEqBar(); toast(txtMulti ? 'Trykk på flere tekster for å velge dem' : 'Velger én om gangen'); return; }
+  if (a === 'tedit') { if (sel.length === 1) editTextDlg(sel[0]); return; }
   pushUndo();
-  if (a === 'tdel') {
-    if (e.added) st.added = st.added.filter(q => q !== e.added);
-    else st.edits[e.key] = Object.assign(st.edits[e.key] || {}, { del: true });
-    txtSel = null;
-  } else if (a === 'treset') delete st.edits[e.key];
+  for (const e of sel) {
+    if (a === 'tdel') {
+      if (e.added) st.added = st.added.filter(q => q !== e.added);
+      else st.edits[e.key] = Object.assign(st.edits[e.key] || {}, { del: true });
+    } else if (a === 'treset') delete st.edits[e.key];
+  }
+  if (a === 'tdel') { txtClear(); txtMulti = false; }
   save(); updateEqBar(); req();
 }
 function editTextDlg(e) {
@@ -837,7 +864,7 @@ function newTextAt(u) {
       pushUndo();
       const a = { id: uid(), x: u.x, y: u.y, h, s: v, layer: tl.name };
       txtStore().added.push(a);
-      txtSel = 'n' + a.id;
+      txtSelect('n' + a.id, false);
       close(); save(); updateEqBar(); req();
     };
     $('[data-ok]', el).onclick = ok; inp.onkeydown = ev => { if (ev.key === 'Enter') ok(); };
