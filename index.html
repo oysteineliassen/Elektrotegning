@@ -158,7 +158,19 @@
   #modeSeg.on { display: flex; }
   #modeSeg button { flex: 1; padding: 7px; border-radius: 999px; font-size: 14px; }
   #modeSeg button.on { background: #fff; color: #111; border-color: #fff; font-weight: 600; }
-  #pal, #chgBtn, #runBtn, #txtBtn { display: none; }
+  #pal, #chgBtn, #runBtn, #txtBtn, #toolsBtn { display: none; }
+  #toolsBtn { flex: none; width: 46px; height: 44px; padding: 0; border-radius: 999px; font-size: 19px; }
+  #toolsBtn.on { background: var(--accent); border-color: var(--accent); color: #111; font-weight: 700; }
+  #toolPop { position: absolute; right: 8px; bottom: 8px; display: none; flex-direction: column; gap: 6px; padding: 8px; background: #111827;
+    border-radius: 14px; box-shadow: 0 8px 24px rgba(0,0,0,.4); z-index: 5; min-width: 200px; }
+  #toolPop.on { display: flex; }
+  #toolPop button { text-align: left; padding: 12px 14px; font-size: 16px; }
+  #toolPop button.on { background: var(--accent); border-color: var(--accent); color: #111; }
+  /* telefon: føring, tekst og vis-endringer samles bak 🛠 så paletten får plass */
+  @media (max-width: 899px) {
+    #tools.eq #runBtn, #tools.eq #txtBtn, #tools.eq #chgBtn { display: none !important; }
+    #tools.eq #toolsBtn { display: block; }
+  }
   #tools.eq #runBtn, #tools.eq #txtBtn { display: block; }
   #txtBtn { flex: none; width: 42px; height: 40px; padding: 0; border-radius: 999px; font-size: 18px; font-weight: 700; font-family: Georgia, serif; }
   #txtBtn.on { background: #2563eb; border-color: #2563eb; color: #fff; }
@@ -223,15 +235,18 @@
     <canvas id="cv"></canvas>
     <div id="eqbar"></div>
     <div id="npick"></div>
+    <div id="toolPop"></div>
     <div id="banner"><span id="bannerTxt"></span><button id="bannerBtn">Avbryt</button></div>
     <div id="loading">Laster tegning …</div>
   </div>
   <div id="sel">
     <div class="row">
       <b id="selTitle">#1</b>
+      <button id="selPhoto" title="Bilder">📷</button>
       <button id="selDel" class="danger">Slett</button>
       <button id="selClose" class="ghost">✕</button>
     </div>
+    <div id="selWarn" style="color:#fca5a5;font-size:13px"></div>
     <div class="dims">
       <button class="dimbtn x" id="selX"><span class="lab">X ↔</span><span class="val" id="selXv">–</span><small id="selXs"></small></button>
       <button class="dimbtn y" id="selY"><span class="lab">Y ↕</span><span class="val" id="selYv">–</span><small id="selYs"></small></button>
@@ -244,6 +259,7 @@
     <div id="pal"></div>
     <button id="runBtn" aria-label="Tegn føring" data-label="Føring">〰</button>
     <button id="txtBtn" aria-label="Tekst" data-label="Tekst">T</button>
+    <button id="toolsBtn" aria-label="Verktøy">🛠</button>
     <button id="chgBtn" class="on" aria-label="Vis endringer" data-label="Vis endringer">👁</button>
     <button id="undoBtn" aria-label="Angre" data-label="Angre">↶</button>
   </div>
@@ -258,6 +274,9 @@
 <script src="app.js"></script>
 <script src="eq.js"></script>
 <script src="pdfexport.js"></script>
+<script src="lists.js"></script>
+<script src="photos.js"></script>
+<script src="joists.js"></script>
 <script src="sync.js"></script>
 </body>
 </html>

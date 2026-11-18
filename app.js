@@ -417,11 +417,18 @@ function draw() {
   else if (typeof palDrag !== 'undefined' && palDrag && palDrag.inside) drawLoupe(ctx, palDrag, false);
   updatePanel();
   if (typeof positionEqBar === 'function') positionEqBar();
+  if (gest && gest.type === 'box' && gest.x1 != null) {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = 'rgba(37,99,235,.08)'; ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 1; ctx.setLineDash([5, 3]);
+    const x = Math.min(gest.x0, gest.x1), y = Math.min(gest.y0, gest.y1), w = Math.abs(gest.x1 - gest.x0), h = Math.abs(gest.y1 - gest.y0);
+    ctx.fillRect(x, y, w, h); ctx.strokeRect(x, y, w, h); ctx.setLineDash([]);
+  }
 }
 
 function drawOverlay(ctx, v, o) {
   const k = o.k;
   const pts = P.points;
+  if (typeof drawJoists === 'function') drawJoists(ctx, v, o);
   for (const p of pts) {
     if (o.export || S.dims === 'all' || p.id === selId || p === dragPt) drawDims(ctx, v, p, o);
   }
@@ -437,6 +444,9 @@ function drawOverlay(ctx, v, o) {
   pts.forEach((p, i) => {
     const sx = p.x * v.s + v.tx, sy = p.y * v.s + v.ty;
     drawSym(ctx, p, sx, sy, 11 * k, !o.export && p.id === selId, i + 1, k);
+    if (!o.export && typeof hasPhoto === 'function' && hasPhoto('p' + p.id)) drawPhotoBadge(ctx, sx - 12 * k, sy - 12 * k);
+    const ji = typeof joistInfo === 'function' && joistInfo(p);
+    if (ji && ji.hit) drawJoistWarn(ctx, sx, sy, k);
   });
   if (o.main && rowPreview) {
     ctx.globalAlpha = 0.75;
@@ -630,6 +640,8 @@ cv.addEventListener('pointerdown', e => {
     const hk = eqTool === 'sel' ? hitKurs(p.x, p.y) : null;
     const hi = hk || eqTool === 'text' ? null : hitItem(p.x, p.y);
     gest = { type: 'pending', x0: p.x, y0: p.y, hi, hk, ht, mod: e.ctrlKey || e.shiftKey || e.metaKey, v0: { ...view } };
+    // Shift + dra i tomt område (PC) = velg med ramme
+    if (e.shiftKey && !hi && !hk && !ht && (eqTool === 'sel' || eqTool === 'text')) gest.type = 'box';
     if (ht) lpTimer = setTimeout(() => startTextDrag(ht), 380);
     if (hk) lpTimer = setTimeout(() => { if (gest && gest.type === 'pending') { pushUndo(); gest.type = 'kdrag'; try { navigator.vibrate && navigator.vibrate(15); } catch (e) { } } }, 380);
     else if (hi) lpTimer = setTimeout(() => startItemDrag(hi, p.x, p.y), 380);
@@ -679,6 +691,10 @@ cv.addEventListener('pointermove', e => {
     moveKurs(gest.hk, p);
   } else if (gest.type === 'tdrag') {
     moveText(p);
+  } else if (gest.type === 'gdrag') {
+    moveGroup(p);
+  } else if (gest.type === 'box') {
+    gest.x1 = p.x; gest.y1 = p.y; req();
   } else if (gest.type === 'idrag') {
     moveItemDrag(p);
   } else if (gest.type === 'drag') {
@@ -699,6 +715,8 @@ function ptrEnd(e) {
   else if (gest.type === 'idrag') endItemDrag();
   else if (gest.type === 'kdrag') save();
   else if (gest.type === 'tdrag') endTextDrag();
+  else if (gest.type === 'gdrag') endGroupDrag();
+  else if (gest.type === 'box') boxSelect(gest);
   else if (gest.type === 'pinch' && ptrs.size === 1) {
     const [p] = [...ptrs.values()];
     gest = { type: 'pan', x0: p.x, y0: p.y, v0: { ...view } };
@@ -717,6 +735,7 @@ cv.addEventListener('wheel', e => {
 cv.addEventListener('contextmenu', e => e.preventDefault());
 
 function onTap(x, y, g) {
+  if (mode === 'joist') { joistTap(toUnit(x, y)); return; }
   if (mode === 'row') {
     const u = toUnit(x, y);
     const tmp = { x: u.x, y: u.y };
@@ -783,8 +802,13 @@ function updatePanel() {
   if ($('#selYv').textContent !== yv) $('#selYv').textContent = yv;
   if ($('#selXs').textContent !== xs) $('#selXs').textContent = xs;
   if ($('#selYs').textContent !== ys) $('#selYs').textContent = ys;
+  const ji = typeof joistInfo === 'function' && joistInfo(p);
+  const w = ji && ji.hit ? `⚠ Hullet treffer bjelke (${Math.round(ji.need * P.mmPerUnit)} mm for nær) <button id="selGap">Flytt mellom bjelker</button>` : '';
+  const el = $('#selWarn');
+  if (el.dataset.k !== w) { el.dataset.k = w; el.innerHTML = w; const b = $('#selGap'); if (b) b.onclick = () => { const q = P.points.find(z => z.id === selId); if (q) moveToGap(q); }; }
 }
 $('#selClose').onclick = () => select(null);
+$('#selPhoto').onclick = () => { const i = P.points.findIndex(q => q.id === selId); if (i >= 0) openPhotos('p' + selId, `#${i + 1} ${(TYPES[P.points[i].type] || TYPES.downlight).name}`); };
 $('#selDel').onclick = () => {
   pushUndo();
   P.points = P.points.filter(p => p.id !== selId);
@@ -1087,6 +1111,7 @@ function openSettings() {
          <div class="setrow"><span>Lag og vegger</span><button data-layers>Velg lag</button></div>`}
     <div class="setrow"><span>Steg ved flytting</span><select id="sSnap">${opt([[0, 'Av'], [1, '1 mm'], [5, '5 mm'], [10, '10 mm'], [50, '50 mm'], [100, '100 mm']], S.snap)}</select></div>
     <div class="setrow"><span>Vis mål</span><select id="sDims">${opt([['all', 'Alle punkter'], ['sel', 'Kun valgt']], S.dims)}</select></div>
+    ${P.kind === 'dxf' ? `<label class="setrow"><span>Forstørr små symboler når du zoomer ut</span><input type="checkbox" id="sMinSym" ${S.minSym !== false ? 'checked' : ''} style="width:24px;height:24px"></label>` : ''}
     <div class="setrow"><span>Symbolstørrelse</span><input type="range" id="sSym" min="0.7" max="2" step="0.1" value="${S.sym}"></div>
     ${isPdf ? `<p style="margin-top:16px"><b style="color:var(--text)">Veggsøk i PDF</b><br>Målet går til første mørke strek. Juster hvis den stopper på feil streker.</p>
     <div class="setrow"><span>Mørkhetsgrense</span><input type="range" id="sThr" min="40" max="240" step="5" value="${S.thr}"></div>
@@ -1099,6 +1124,7 @@ function openSettings() {
     $('#sSnap', el).onchange = e => { S.snap = +e.target.value; saveS(); };
     $('#sDims', el).onchange = e => { S.dims = e.target.value; saveS(); req(); };
     $('#sSym', el).oninput = e => { S.sym = +e.target.value; saveS(); req(); };
+    const ms = $('#sMinSym', el); if (ms) ms.onchange = () => { S.minSym = ms.checked; saveS(); req(); };
     const t = $('#sThr', el); if (t) t.oninput = () => { S.thr = +t.value; saveS(); invalidateDims(); req(); };
     const mn = $('#sMin', el); if (mn) mn.onchange = () => { S.minStroke = +mn.value; saveS(); invalidateDims(); req(); };
   });
@@ -1169,7 +1195,8 @@ function openList() {
 function openMenu() {
   const isPdf = P.kind === 'pdf';
   dialog(`<h2>${esc(P.name)}</h2><div class="menu">
-    <button data-a="list">☰ Punktliste</button>
+    <button data-a="info">🏷 Prosjektinfo (tittelfelt)</button>
+    ${eqActive() ? '<button data-a="mat">📋 Materialliste</button><button data-a="kurs">⚡ Kursliste</button>' : '<button data-a="list">☰ Punktliste</button><button data-a="joist">▥ Bjelkelag</button><button data-a="mat">📋 Materialliste</button>'}
     <button data-a="fit">⤢ Tilpass visning</button>
     <button data-a="set">⚙ Innstillinger</button>
     ${isPdf ? '<button data-a="scale">📏 Målestokk / kalibrer</button>' : '<button data-a="layers">▤ Lag og vegger</button>'}
@@ -1183,6 +1210,10 @@ function openMenu() {
       close();
       const a = b.dataset.a;
       if (a === 'list') openList();
+      else if (a === 'info') openInfo();
+      else if (a === 'mat') openMaterialList();
+      else if (a === 'kurs') openKursList();
+      else if (a === 'joist') openJoists();
       else if (a === 'fit') fitView();
       else if (a === 'set') openSettings();
       else if (a === 'scale') askScale();
@@ -1190,7 +1221,7 @@ function openMenu() {
       else if (a === 'exp') openExport();
       else if (a === 'bak') exportBackup(P);
       else if (a === 'ren') promptDlg('Gi nytt navn', 'Navn', P.name, v => { P.name = v; updateTitle(); save(); });
-      else if (a === 'eqreset') confirmDlg('Tilbakestille utstyr?', `${changeCount()} endringer forkastes (kan angres).`, 'Tilbakestill', () => { pushUndo(); P.eq = { edits: {}, added: [] }; buildItems(); eqSel = null; updateEqBar(); save(); req(); }, true);
+      else if (a === 'eqreset') confirmDlg('Tilbakestille utstyr?', `${changeCount()} endringer forkastes (kan angres).`, 'Tilbakestill', () => { pushUndo(); P.eq.edits = {}; P.eq.added = []; buildItems(); eqSel = null; updateEqBar(); save(); req(); }, true);
       else if (a === 'clr') confirmDlg('Slette alle punkter?', `${P.points.length} punkter fjernes (kan angres).`, 'Slett', () => { pushUndo(); P.points = []; select(null); save(); }, true);
     });
   });
@@ -1261,7 +1292,9 @@ function blobToB64(blob) {
 async function exportBackup(proj) {
   if (proj === P) await flushSave();
   const blob = await store.getFile(proj.id);
-  const data = { format: 'takpunkter', version: 1, project: { ...proj, points: proj.points.map(clean) }, file: blob ? await blobToB64(blob) : null, fileType: blob ? blob.type : null };
+  const photos = {};
+  for (const id of Object.values(proj.photos || {}).flat()) { const b = await (typeof getPhoto === 'function' ? getPhoto(id) : null); if (b) photos[id] = await blobToB64(b); }
+  const data = { format: 'takpunkter', version: 1, project: { ...proj, points: proj.points.map(clean) }, file: blob ? await blobToB64(blob) : null, fileType: blob ? blob.type : null, photos };
   await shareOrDownload(new Blob([JSON.stringify(data)], { type: 'application/json' }), safeName(proj.name) + '.takp', proj.name);
 }
 
@@ -1298,7 +1331,7 @@ function show(id) { document.querySelectorAll('.view').forEach(v => v.classList.
 function updateTitle() {
   if (!P) return;
   const sub = P.kind === 'pdf' ? `PDF · ${P.scaleText ? (P.scaleText === 'kalibrert' ? 'kalibrert' : 'målestokk ' + P.scaleText) : 'mangler målestokk'}` : `DXF · ${P.units}`;
-  let tail = P.points.length ? P.points.length + ' punkter' : 'trykk for å plassere';
+  let tail = P.points.length ? P.points.length + (P.points.length === 1 ? ' punkt' : ' punkter') : 'trykk for å plassere';
   if (typeof eqActive === 'function' && eqActive()) { const n = changeCount(); tail = n ? n + ' endringer' : (matchMedia('(pointer: fine)').matches ? 'dra for å flytte' : 'hold inne for å flytte'); }
   $('#edTitle').innerHTML = `${esc(P.name)}<small>${esc(sub)} · ${esc(tail)}</small>`;
 }
@@ -1443,6 +1476,11 @@ async function importBackup(f) {
     for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
     await store.putFile(p.id, new Blob([u8], { type: data.fileType || 'application/octet-stream' }));
   }
+  for (const [id, b64] of Object.entries(data.photos || {})) {
+    const bin = atob(b64), u8 = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    await store.putFile('photo:' + id, new Blob([u8], { type: 'image/jpeg' }));
+  }
   await store.put(p);
   toast('Importert: ' + p.name);
   renderHome();
@@ -1497,13 +1535,15 @@ document.addEventListener('keydown', e => {
     else if (eq && eqTool === 'run') setRunTool(false);
     else if (eq && eqTool === 'text' && !txtSel) setTextTool(false);
     else if (eq && txtSel) { txtClear(); txtMulti = false; updateEqBar(); req(); }
+    else if (eq && eqSet.size) { eqSet.clear(); eqSel = null; updateEqBar(); req(); }
     else if (eq && eqArm) setArm(null);
     else { select(null); if (eq) { eqSel = null; runSel = null; updateEqBar(); req(); } }
     return;
   }
   if (k === 'Delete' || k === 'Backspace') {
     e.preventDefault();
-    if (eq && txtSel) textAction('tdel');
+    if (eq && eqSet.size > 1) groupDelete();
+    else if (eq && txtSel) textAction('tdel');
     else if (eq && eqSel) eqAction('del');
     else if (eq && runSel) runAction('rdel');
     else if (!eq && selId) $('#selDel').click();
@@ -1515,6 +1555,42 @@ document.addEventListener('keydown', e => {
   if (k === '-') { zoomAt(cw / 2, ch / 2, 0.8); afterView(); return; }
 });
 
+function boxSelect(g) {
+  if (g.x1 == null) return;
+  const x0 = Math.min(g.x0, g.x1), x1 = Math.max(g.x0, g.x1), y0 = Math.min(g.y0, g.y1), y1 = Math.max(g.y0, g.y1);
+  const inside = (wx, wy) => { const X = wx * view.s + view.tx, Y = wy * view.s + view.ty; return X >= x0 && X <= x1 && Y >= y0 && Y <= y1; };
+  if (eqTool === 'text') {
+    for (const e of allTextDisp()) if (inside(e.d.x, e.d.y)) txtSelect(e.key, true);
+  } else {
+    const keys = allItems().filter(it => !it.del && doc.show[it.li] && (() => { const c = itemCenter(it); return inside(c.x, c.y); })()).map(it => it.key);
+    eqSet = new Set(keys); eqSel = keys[keys.length - 1] || null;
+    if (eqSet.size < 2) eqSet.clear();
+  }
+  updateEqBar(); req();
+}
+
+/* ---------------- Filer delt til appen / åpnet med appen ---------------- */
+async function receiveSharedFiles() {
+  if (/[?&]shared=/.test(location.search) && 'caches' in window) {
+    history.replaceState(null, '', location.pathname);
+    try {
+      const c = await caches.open('shared-files');
+      for (const req of await c.keys()) {
+        const r = await c.match(req);
+        const name = decodeURIComponent(r.headers.get('X-Name') || 'fil');
+        const blob = await r.blob();
+        await c.delete(req);
+        await handleFile(new File([blob], name, { type: blob.type }));
+      }
+    } catch (e) { toast('Kunne ikke lese delt fil'); }
+  }
+  if ('launchQueue' in window) {
+    window.launchQueue.setConsumer(async params => {
+      for (const h of params.files || []) { try { await handleFile(await h.getFile()); } catch (e) { } }
+    });
+  }
+}
+
 /* ---------------- Start ---------------- */
 (async function init() {
   buildChips();
@@ -1522,6 +1598,7 @@ document.addEventListener('keydown', e => {
     await store.open();
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => { });
     await renderHome();
+    receiveSharedFiles();
   } catch (e) {
     $('#plist').innerHTML = '<div class="empty">Lagring er ikke tilgjengelig i denne nettleseren (privat modus?).</div>';
   }

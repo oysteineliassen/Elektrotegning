@@ -64,6 +64,58 @@ function cleanProject(p) {
   return { ...r, points: (p.points || []).map(q => { const { _d, ...x } = q; return x; }) };
 }
 
+/* ---------- Fletting når samme prosjekt er endret på to enheter ---------- */
+const J_ = x => JSON.stringify(x === undefined ? null : x);
+function keyedMerge(b = {}, l = {}, r = {}, localWins) {
+  const out = {};
+  for (const k of new Set([...Object.keys(b), ...Object.keys(l), ...Object.keys(r)])) {
+    const B = b[k], L = l[k], R = r[k];
+    let v;
+    if (J_(L) === J_(R)) v = L;
+    else if (J_(B) === J_(L)) v = R;       // bare endret der borte
+    else if (J_(B) === J_(R)) v = L;       // bare endret her
+    else v = localWins ? L : R;            // endret begge steder: nyeste vinner
+    if (v !== undefined && v !== null) out[k] = v;
+  }
+  return out;
+}
+const byId = (a, f = 'id') => Object.fromEntries((a || []).map(x => [x[f], x]));
+function mergeArr(b, l, r, localWins) {
+  const m = keyedMerge(byId(b), byId(l), byId(r), localWins);
+  const order = [...(l || []).map(x => x.id), ...(r || []).map(x => x.id)];
+  return [...new Set(order)].filter(id => m[id]).map(id => m[id]);
+}
+function mergeIdLists(b = {}, l = {}, r = {}) {
+  const out = {};
+  for (const k of new Set([...Object.keys(b), ...Object.keys(l), ...Object.keys(r)])) {
+    const B = new Set(b[k] || []), L = l[k] || [], R = r[k] || [];
+    const ids = [...new Set([...L, ...R])].filter(id => !(B.has(id) && (!L.includes(id) || !R.includes(id))));
+    if (ids.length) out[k] = ids;
+  }
+  return out;
+}
+function mergeProject(B, L, R) {
+  const lw = (L.updated || 0) >= (R.updated || 0);
+  const M = Object.assign({}, lw ? R : L, lw ? L : R);
+  M.points = mergeArr(B.points, L.points, R.points, lw);
+  M.photos = mergeIdLists(B.photos, L.photos, R.photos);
+  const be = B.eq || {}, le = L.eq || {}, re = R.eq || {};
+  if (L.eq || R.eq) {
+    M.eq = Object.assign({}, lw ? re : le, lw ? le : re);
+    M.eq.edits = keyedMerge(be.edits, le.edits, re.edits, lw);
+    M.eq.added = mergeArr(be.added, le.added, re.added, lw);
+    M.eq.runs = mergeArr(be.runs, le.runs, re.runs, lw);
+    M.eq.kurs = keyedMerge(be.kurs, le.kurs, re.kurs, lw);
+    M.eq.notes = keyedMerge(be.notes, le.notes, re.notes, lw);
+    const bt = be.texts || {}, lt = le.texts || {}, rt = re.texts || {};
+    M.eq.texts = { edits: keyedMerge(bt.edits, lt.edits, rt.edits, lw), added: mergeArr(bt.added, lt.added, rt.added, lw) };
+  }
+  M.updated = Math.max(L.updated || 0, R.updated || 0);
+  return M;
+}
+async function saveBase(p) { try { await store.putFile('base:' + p.id, new Blob([JSON.stringify(cleanProject(p))], { type: 'application/json' })); } catch (e) { } }
+async function loadBase(id) { try { const b = await store.getFile('base:' + id); return b ? JSON.parse(await b.text()) : null; } catch (e) { return null; } }
+
 async function syncNow() {
   if (!SYNC.cfg || !navigator.onLine) { if (SYNC.cfg) syncStatus('Synk venter på nett'); return; }
   if (SYNC.busy) { SYNC.again = true; return; }
@@ -71,7 +123,8 @@ async function syncNow() {
   syncStatus('Synker …');
   let changedLocal = false;
   try {
-    const [rp, rf] = await Promise.all([ghList('projects'), ghList('files')]);
+    const [rp, rf, rph] = await Promise.all([ghList('projects'), ghList('files'), ghList('photos')]);
+    const phRemote = new Set(rph.map(f => f.name.replace(/\.jpg$/, '')));
     const rsha = {}, fsha = {};
     for (const f of rp) if (f.name.endsWith('.json')) rsha[f.name.slice(0, -5)] = f.sha;
     for (const f of rf) fsha[f.name] = f.sha;
@@ -85,9 +138,15 @@ async function syncNow() {
         const blob = await store.getFile(L.id);
         if (blob) fsha[L.id] = await ghPut('files/' + L.id, await blobToB64(blob), null);
       }
+      for (const pid of Object.values(L.photos || {}).flat()) {
+        if (phRemote.has(pid)) continue;
+        const b = await store.getFile('photo:' + pid);
+        if (b) { await ghPut('photos/' + pid + '.jpg', await blobToB64(b), null); phRemote.add(pid); }
+      }
       const nsha = await ghPut(`projects/${L.id}.json`, b64utf8(JSON.stringify(cleanProject(L))), sha);
       const m = SYNC.meta[L.id] || (SYNC.meta[L.id] = {});
       m.sha = nsha; if (!m.dirty || m.dirty <= t0) m.dirty = 0;
+      await saveBase(L);
       syncSaveMeta();
     };
     const getRemote = async id => JSON.parse(await (await gh(`/contents/projects/${id}.json`, { raw: true })).text());
@@ -98,6 +157,7 @@ async function syncNow() {
         await store.putFile(R.id, new Blob([buf], { type: R.kind === 'pdf' ? 'application/pdf' : 'application/octet-stream' }));
       }
       await store.put(R, true);
+      await saveBase(R);
       SYNC.meta[R.id] = { sha, dirty: 0 };
       syncSaveMeta();
       changedLocal = true;
@@ -127,8 +187,18 @@ async function syncNow() {
       if (R.deleted) {
         if (m.dirty) await uploadJson(L, rs);
         else { await _del(id); SYNC.meta[id] = { deleted: true, sha: rs }; syncSaveMeta(); changedLocal = true; if (P && P.id === id) closeEditor(); }
-      } else if (m.dirty && (L.updated || 0) > (R.updated || 0)) await uploadJson(L, rs);
-      else await applyRemote(R, rs);
+      } else if (m.dirty) {
+        // endret både her og der: flett per punkt/symbol/føring/tekst
+        const B = await loadBase(id);
+        if (B) {
+          const M = mergeProject(B, L, R);
+          await store.put(M, true);
+          if (P && P.id === id) refreshOpenProject(M);
+          await uploadJson(M, rs);
+          changedLocal = true;
+        } else if ((L.updated || 0) > (R.updated || 0)) await uploadJson(L, rs);
+        else await applyRemote(R, rs);
+      } else await applyRemote(R, rs);
     }
     SYNC.last = Date.now();
     syncStatus('Synket ' + new Date().toLocaleTimeString('no-NO', { hour: '2-digit', minute: '2-digit' }));

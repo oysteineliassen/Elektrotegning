@@ -239,8 +239,13 @@ function drawEquip(ctx, v, dpr, o, W, H) {
       }
     }
     if (it.del) continue;
-    const f = o.export ? 1 : clamp(11 / Math.max(1e-9, g.rad * Math.abs(it.sx) * v.s), 1, 4);
+    const f = o.export || S.minSym === false ? 1 : clamp(11 / Math.max(1e-9, g.rad * Math.abs(it.sx) * v.s), 1, 4);
     drawBlock(ctx, v, dpr, g, it.x, it.y, it.r, it.sx * f, it.sy * f, col, 1, k);
+    if (!o.export && typeof hasPhoto === 'function' && hasPhoto(it.key)) {
+      const c = itemCenter(it); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const rr = Math.max(10, g.rad * f * Math.abs(it.sx) * v.s * 0.8);
+      drawPhotoBadge(ctx, c.x * v.s + v.tx - rr, c.y * v.s + v.ty + rr);
+    }
     if (it.labels.length) {
       ctx.save();
       ctx.setTransform(dpr * v.s, 0, 0, dpr * v.s, dpr * v.tx, dpr * v.ty);
@@ -275,7 +280,14 @@ function drawEquip(ctx, v, dpr, o, W, H) {
       ctx.fillStyle = 'rgba(220,38,38,.15)'; ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = '#dc2626'; ctx.stroke();
     }
   }
-  if (!o.export && edMode === 'utstyr' && eqSel) {
+  if (!o.export && edMode === 'utstyr' && eqSet.size > 1) {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    for (const it of groupItems()) {
+      const g = doc.geom(it.block), c = itemCenter(it), r = Math.max(18, (g ? g.rad * Math.abs(it.sx) : 0) * v.s + 8);
+      ctx.beginPath(); ctx.arc(c.x * v.s + v.tx, c.y * v.s + v.ty, r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(37,99,235,.12)'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#2563eb'; ctx.stroke();
+    }
+  } else if (!o.export && edMode === 'utstyr' && eqSel) {
     const it = itemByKey(eqSel);
     if (it && !it.del) {
       const g = doc.geom(it.block), c = itemCenter(it);
@@ -301,7 +313,13 @@ function hitItem(x, y) {
   }
   return best;
 }
-function eqSelect(key) { eqSel = key; updateEqBar(); req(); }
+let eqSet = new Set();
+function eqSelect(key, add) {
+  if (add && key) { if (eqSet.size === 0 && eqSel) eqSet.add(eqSel); if (eqSet.has(key)) eqSet.delete(key); else eqSet.add(key); eqSel = eqSet.size ? [...eqSet].pop() : null; if (eqSet.size < 2) eqSet.clear(); }
+  else { eqSet.clear(); eqSel = key; }
+  updateEqBar(); req();
+}
+function groupItems() { return [...eqSet].map(itemByKey).filter(Boolean); }
 
 function eqTap(x, y, g) {
   if (eqTool === 'text') { textTap(x, y, g); return; }
@@ -316,7 +334,7 @@ function eqTap(x, y, g) {
     if (hr) { runSel = hr.id; eqSel = null; updateEqBar(); req(); return; }
     runStart = null; runSel = null; runBanner(); updateEqBar(); req(); return;
   }
-  if (g.hi) { runSel = null; eqSelect(eqSel === g.hi.key ? null : g.hi.key); return; }
+  if (g.hi) { runSel = null; if (g.mod) eqSelect(g.hi.key, true); else eqSelect(eqSel === g.hi.key && !eqSet.size ? null : g.hi.key); return; }
   const hr = hitRun(x, y);
   if (hr && !eqArm) { runSel = hr.id; eqSel = null; updateEqBar(); req(); return; }
   runSel = null;
@@ -405,6 +423,14 @@ function inStack(it) { return !!it.stackOn || above(it).length > 0; }
 /* ---------- Dra ---------- */
 function startItemDrag(it, x, y) {
   if (!gest || gest.type !== 'pending') return;
+  if (eqSet.size > 1 && eqSet.has(it.key)) {
+    pushUndo();
+    gest.type = 'gdrag'; gest.u0 = toUnit(x, y);
+    gest.grp = groupItems().map(q => { if (q.stackOn && !eqSet.has(q.stackOn)) unstack(q); return { q, x: q.x, y: q.y }; });
+    try { navigator.vibrate && navigator.vibrate(15); } catch (e) { }
+    updateEqBar(); req();
+    return;
+  }
   pushUndo();
   gest.type = 'idrag';
   const s = { x: it.x * view.s + view.tx, y: it.y * view.s + view.ty };
@@ -442,6 +468,31 @@ function moveItemDrag(p) {
   resolveStacks();
   req();
 }
+function moveGroup(p) {
+  const u = toUnit(p.x, p.y), dx = u.x - gest.u0.x, dy = u.y - gest.u0.y;
+  for (const { q, x, y } of gest.grp) {
+    if (q.stackOn && eqSet.has(q.stackOn)) continue;
+    q.x = x + dx; q.y = y + dy;
+    if (q.isPt) { q.pt.x = q.x; q.pt.y = q.y; q.pt._d = null; }
+  }
+  resolveStacks(); req();
+}
+function endGroupDrag() {
+  gest.type = 'end';
+  for (const { q } of gest.grp) if (q.added && !q.isPt) { q.ox = q.x; q.oy = q.y; }
+  commitAll(); save(); updateEqBar(); updateTitle(); req();
+}
+function groupDelete() {
+  pushUndo();
+  for (const it of groupItems()) {
+    if (it.isPt) { P.points = P.points.filter(q => q !== it.pt); continue; }
+    if (inStack(it)) unstack(it);
+    if (it.added) { P.eq.added = P.eq.added.filter(q => q.id !== it.id); EQ.items = EQ.items.filter(q => q !== it); }
+    else it.del = true;
+  }
+  eqSet.clear(); eqSel = null;
+  commitAll(); save(); updateEqBar(); updateTitle(); req();
+}
 function endItemDrag() {
   const it = gest.item;
   gest.type = 'end';
@@ -458,6 +509,11 @@ function updateEqBar() {
   const run = runSel && (P.eq.runs || []).find(r => r.id === runSel);
   const it = !run && eqSel && itemByKey(eqSel);
   const te = eqTool === 'text' && txtSel && allTextDisp().find(q => q.key === txtSel);
+  if (eqSet.size > 1 && eqTool === 'sel' && eqActive() && !(gest && gest.type === 'gdrag')) {
+    const html = `<b>${eqSet.size} symboler</b><button data-a="gdel" title="Slett alle">🗑</button><button data-a="gnone" title="Fjern valg">✕</button>`;
+    if (bar.dataset.k !== html) { bar.innerHTML = html; bar.dataset.k = html; bar.querySelectorAll('[data-a]').forEach(b => b.onclick = () => eqAction(b.dataset.a)); }
+    bar.classList.add('on'); positionEqBar(); return;
+  }
   if (!eqActive() || (!te && !run && (!it || it.del)) || (gest && (gest.type === 'idrag' || gest.type === 'tdrag'))) { bar.classList.remove('on'); bar.dataset.k = ''; return; }
   let html;
   const kb = it ? `<button class="num" data-a="kurs" title="Kursnummer (første boks etter tavla)">${kursOf(it.key) ? esc(kursText(kursOf(it.key)).replace('\n', '')) : 'Kurs'}</button>` : '';
@@ -467,12 +523,12 @@ function updateEqBar() {
       + (sel.some(q => (q.note ? notesMap()[q.note.key].lx != null : !q.added && txtEd(q.key))) ? `<button data-a="treset" title="Tilbake til original">↺</button>` : '')
       + `<button data-a="tmulti" title="Velg flere" style="${txtMulti ? 'background:#2563eb' : ''}">⊞</button><button data-a="tdel" title="Slett">🗑</button>`;
   }
-  else if (it && it.isPt) html = `<b>${esc((TYPES[it.pt.type] || TYPES.downlight).name)}</b>${kb}<button data-a="note" title="Kommentar">💬</button><button data-a="del" title="Slett">🗑</button>`;
+  else if (it && it.isPt) html = `<b>${esc((TYPES[it.pt.type] || TYPES.downlight).name)}</b>${kb}<button data-a="note" title="Kommentar">💬</button><button data-a="photo" title="Bilder">📷</button><button data-a="del" title="Slett">🗑</button>`;
   else if (run) html = `<b>Føring</b><button data-a="rflip" title="Bøy andre veien">⇅</button><button data-a="rbend" title="Mer/mindre bue">⌒</button><button data-a="rdel" title="Slett">🗑</button>`;
   else html = `<b>${esc(prettyBlock(it.block))}${it.added ? ' · ny' : isMoved(it) ? ' · flyttet' : ''}</b>`
     + (countable(it.block) ? `<button class="num" data-a="n" title="Antall uttak">${it.n}×</button>` : '') + kb
     + (inStack(it) ? `<button data-a="swap" title="Bytt plass i stabelen">⇵</button>` : `<button data-a="rot" title="Roter 90°">⟳</button><button data-a="flip" title="Snu til andre siden av veggen">⇅</button>`)
-    + `<button data-a="note" title="Kommentar">💬</button><button data-a="dup" title="Kopier">⧉</button>`
+    + `<button data-a="note" title="Kommentar">💬</button><button data-a="photo" title="Bilder">📷</button><button data-a="dup" title="Kopier">⧉</button>`
     + (isMoved(it) ? `<button data-a="reset" title="Tilbake til prosjektert">↺</button>` : '')
     + `<button data-a="del" title="Slett">🗑</button>`;
   if (bar.dataset.k !== html) {
@@ -483,6 +539,11 @@ function updateEqBar() {
   positionEqBar();
 }
 function selAnchor() {
+  if (eqSet.size > 1 && eqTool === 'sel') {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const it of groupItems()) { const c = itemCenter(it), X = c.x * view.s + view.tx, Y = c.y * view.s + view.ty; x0 = Math.min(x0, X); x1 = Math.max(x1, X); y0 = Math.min(y0, Y); y1 = Math.max(y1, Y); }
+    return { x: (x0 + x1) / 2, y: y0, r: 20, yb: y1 };
+  }
   if (eqTool === 'text' && txtSel) return txtAnchor();
   const run = runSel && (P.eq.runs || []).find(r => r.id === runSel);
   if (run) { const g = runGeom(run); return g ? { x: g.apex.x * view.s + view.tx, y: g.apex.y * view.s + view.ty, r: 14 } : null; }
@@ -519,12 +580,15 @@ function openNPick(it) {
   positionEqBar();
 }
 function eqAction(a) {
+  if (a === 'gdel') return groupDelete();
+  if (a === 'gnone') { eqSet.clear(); eqSel = null; updateEqBar(); req(); return; }
   if (a === 'tedit' || a === 'treset' || a === 'tdel' || a === 'tmulti') return textAction(a);
   if (a[0] === 'r' && a !== 'rot' && a !== 'reset') return runAction(a);
   const it = itemByKey(eqSel);
   if (!it) return;
   if (a === 'kurs') { editKurs(it.key); return; }
   if (a === 'note') { noteDlg(it); return; }
+  if (a === 'photo') { openPhotos(it.key, it.isPt ? (TYPES[it.pt.type] || TYPES.downlight).name : cap(prettyBlock(it.block))); return; }
   if (it.isPt) {
     if (a === 'del') { pushUndo(); P.points = P.points.filter(q => q !== it.pt); eqSel = null; save(); updateEqBar(); updateTitle(); req(); }
     return;
@@ -866,7 +930,7 @@ function setTextTool(on) {
   if (on) { if (eqTool === 'run') setRunTool(false); setArm(null); eqSel = null; runSel = null; }
   eqTool = on ? 'text' : 'sel';
   txtClear(); txtMulti = false;
-  $('#txtBtn').classList.toggle('on', on);
+  $('#txtBtn').classList.toggle('on', on); updToolsBtn();
   if (on) setBanner('Tekst: trykk = endre · hold og dra = flytt · tomt sted = ny tekst', 'Ferdig', () => setTextTool(false));
   else setBanner(null);
   updateEqBar(); req();
@@ -1059,12 +1123,31 @@ function setRunTool(on) {
   if (on && eqTool === 'text') setTextTool(false);
   eqTool = on ? 'run' : 'sel';
   runStart = null;
-  $('#runBtn').classList.toggle('on', on);
+  $('#runBtn').classList.toggle('on', on); updToolsBtn();
   if (on) { setArm(null); eqSel = null; runSel = null; updateEqBar(); runBanner(); }
   else setBanner(null);
   req();
 }
 $('#runBtn').onclick = () => setRunTool(eqTool !== 'run');
+function updToolsBtn() {
+  const b = $('#toolsBtn');
+  b.textContent = eqTool === 'run' ? '〰' : eqTool === 'text' ? 'T' : '🛠';
+  b.classList.toggle('on', eqTool !== 'sel');
+}
+$('#toolsBtn').onclick = () => {
+  const pop = $('#toolPop');
+  if (pop.classList.contains('on')) { pop.classList.remove('on'); return; }
+  pop.innerHTML = `<button data-t="run" class="${eqTool === 'run' ? 'on' : ''}">〰 Tegn føring</button>
+    <button data-t="text" class="${eqTool === 'text' ? 'on' : ''}">T Tekst</button>
+    <button data-t="chg" class="${S.showChg !== false ? 'on' : ''}">👁 Vis endringer</button>`;
+  pop.querySelectorAll('[data-t]').forEach(x => x.onclick = () => {
+    pop.classList.remove('on');
+    if (x.dataset.t === 'run') $('#runBtn').click();
+    else if (x.dataset.t === 'text') $('#txtBtn').click();
+    else $('#chgBtn').click();
+  });
+  pop.classList.add('on');
+};
 
 /* ---------- Palett ---------- */
 function prettyBlock(n) { return n.replace(/^(E|EL)[-_ ]/i, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim(); }

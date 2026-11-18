@@ -23,6 +23,7 @@ function openExport() {
       <div class="setrow"><span>Papir</span><select id="xPaper">${opt(Object.keys(PAPER).map(k => [k, k]), ex.paper)}</select></div>
       <div class="setrow"><span>Målestokk</span><select id="xScale">${opt([['auto', 'Største som får plass']].concat(SCALES.map(n => [n, '1:' + n])), ex.scale)}</select></div>
       <div class="setrow"><span>Utsnitt</span><select id="xArea">${opt([['all', 'Hele tegningen'], ['view', 'Det du ser nå']], ex.area)}</select></div>
+      ${isDxf ? `<label class="setrow" id="xListsRow"><span>Materialliste og kursliste på side 2</span><input type="checkbox" id="xLists" ${ex.lists !== false ? 'checked' : ''} style="width:24px;height:24px"></label>` : ''}
       <p id="xInfo" style="color:var(--text);font-weight:600"></p>
     </div>
     <p id="dxfInfo" style="display:none">DXF med alle endringer (flyttet, nytt, slettet, føringer og takpunkter). Åpne i AutoCAD og plott fra arkfanen som før.</p>
@@ -35,6 +36,7 @@ function openExport() {
       $('#pdfOpt', el).style.display = fmt === 'pdf' ? '' : 'none';
       $('#dxfInfo', el).style.display = fmt === 'dxf' ? '' : 'none';
       ex.paper = $('#xPaper', el).value; ex.scale = $('#xScale', el).value; ex.area = $('#xArea', el).value; ex.fmt = fmt;
+      const xl = $('#xLists', el); if (xl) { ex.lists = xl.checked; $('#xListsRow', el).style.display = ex.what === 'mal' ? 'none' : ''; }
       if (fmt === 'pdf') {
         const L = pdfLayout(ex);
         $('#xInfo', el).textContent = L ? `${ex.paper} ${L.land ? 'liggende' : 'stående'} · 1:${L.N}` + (L.fits ? '' : ' · får ikke plass, beskjæres') : 'Mangler målestokk';
@@ -42,7 +44,7 @@ function openExport() {
     };
     el.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { fmt = b.dataset.f; upd(); });
     el.querySelectorAll('[data-w]').forEach(b => b.onclick = () => { ex.what = b.dataset.w; upd(); });
-    el.querySelectorAll('select').forEach(s => s.onchange = upd);
+    el.querySelectorAll('select, input[type=checkbox]').forEach(s => s.onchange = upd);
     upd();
     $('[data-x]', el).onclick = close;
     $('[data-ok]', el).onclick = async () => {
@@ -69,7 +71,7 @@ function pdfLayout(ex) {
   const p = PAPER[ex.paper];
   const land = wmm >= hmm;
   const pw = land ? p[0] : p[1], ph = land ? p[1] : p[0];
-  const m = 10, foot = 8, aw = pw - 2 * m, ah = ph - 2 * m - foot;
+  const m = 10, foot = TB_H + 2, aw = pw - 2 * m, ah = ph - 2 * m - foot;
   let N;
   if (ex.scale === 'auto') { N = SCALES.find(n => wmm / n <= aw && hmm / n <= ah) || SCALES[SCALES.length - 1]; }
   else N = +ex.scale;
@@ -98,28 +100,93 @@ async function deflate(u8) {
     return new Uint8Array(await out.arrayBuffer());
   } catch (e) { return null; }
 }
+// pages: [{ content, image? }] – alle sider samme størrelse
 async function makePdf(pwPt, phPt, content, image) {
+  return makePdfPages(pwPt, phPt, [{ content, image }]);
+}
+async function makePdfPages(pwPt, phPt, pages) {
   const parts = [], offs = [];
   let len = 0;
   const push = x => { const u = typeof x === 'string' ? latin1(x) : x; parts.push(u); len += u.length; };
   push('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n');
   const obj = (n, body) => { offs[n] = len; push(`${n} 0 obj\n`); for (const b of body) push(b); push('\nendobj\n'); };
-  const raw = latin1(content);
-  const z = await deflate(raw);
+  // 1 katalog, 2 sider, 3 F1, 4 F2, deretter 3 objekter per side (side, innhold, bilde)
+  const pageIds = pages.map((_, i) => 5 + i * 3);
   obj(1, ['<< /Type /Catalog /Pages 2 0 R >>']);
-  obj(2, ['<< /Type /Pages /Kids [3 0 R] /Count 1 >>']);
-  obj(3, [`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pwPt.toFixed(2)} ${phPt.toFixed(2)}] /Resources << /Font << /F1 5 0 R >>${image ? ' /XObject << /Im1 6 0 R >>' : ''} >> /Contents 4 0 R >>`]);
-  obj(4, [`<< /Length ${(z || raw).length}${z ? ' /Filter /FlateDecode' : ''} >>\nstream\n`, z || raw, '\nendstream']);
-  obj(5, ['<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>']);
-  if (image) obj(6, [`<< /Type /XObject /Subtype /Image /Width ${image.w} /Height ${image.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${image.data.length} >>\nstream\n`, image.data, '\nendstream']);
-  const n = image ? 7 : 6;
+  obj(2, [`<< /Type /Pages /Kids [${pageIds.map(n => n + ' 0 R').join(' ')}] /Count ${pages.length} >>`]);
+  obj(3, ['<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>']);
+  obj(4, ['<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>']);
+  for (let i = 0; i < pages.length; i++) {
+    const pg = pages[i], n = pageIds[i];
+    const raw = latin1(pg.content), z = await deflate(raw);
+    obj(n, [`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pwPt.toFixed(2)} ${phPt.toFixed(2)}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >>${pg.image ? ` /XObject << /Im1 ${n + 2} 0 R >>` : ''} >> /Contents ${n + 1} 0 R >>`]);
+    obj(n + 1, [`<< /Length ${(z || raw).length}${z ? ' /Filter /FlateDecode' : ''} >>\nstream\n`, z || raw, '\nendstream']);
+    if (pg.image) obj(n + 2, [`<< /Type /XObject /Subtype /Image /Width ${pg.image.w} /Height ${pg.image.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${pg.image.data.length} >>\nstream\n`, pg.image.data, '\nendstream']);
+    else obj(n + 2, ['null']);
+  }
+  const total = 5 + pages.length * 3;
   const xref = len;
-  let x = `xref\n0 ${n}\n0000000000 65535 f \n`;
-  for (let i = 1; i < n; i++) x += String(offs[i]).padStart(10, '0') + ' 00000 n \n';
-  push(x + `trailer\n<< /Size ${n} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+  let x = `xref\n0 ${total}\n0000000000 65535 f \n`;
+  for (let i = 1; i < total; i++) x += String(offs[i]).padStart(10, '0') + ' 00000 n \n';
+  push(x + `trailer\n<< /Size ${total} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
   const out = new Uint8Array(len); let o = 0;
   for (const p of parts) { out.set(p, o); o += p.length; }
   return out;
+}
+
+/* ---------- Tittelfelt og tabeller (papirkoordinater i mm, origo nede til venstre) ---------- */
+const TB_H = 30, TB_W = 185;
+function pt(v) { return (Math.round(v * MM * 100) / 100).toString(); }
+function txt(x, y, s, size, bold) { return `BT 0 0 0 rg /${bold ? 'F2' : 'F1'} ${size} Tf 1 0 0 1 ${pt(x)} ${pt(y)} Tm ${pdfStr(String(s))} Tj ET`; }
+function fitTxt(s, size, w) { s = String(s || ''); while (s.length > 1 && textW(s, size) > w * MM) s = s.slice(0, -2) + '…'; return s; }
+function titleBlock(L, title) {
+  const i = projInfo(), x0 = L.pw - L.m - TB_W, y0 = L.m, o = [];
+  const date = new Date().toLocaleDateString('no-NO');
+  o.push(`1 1 1 rg ${pt(x0)} ${pt(y0)} ${pt(TB_W)} ${pt(TB_H)} re f 0 0 0 RG 0.5 w [] 0 d ${pt(x0)} ${pt(y0)} ${pt(TB_W)} ${pt(TB_H)} re S`);
+  const H = (y) => o.push(`0.3 w ${pt(x0)} ${pt(y0 + y)} m ${pt(x0 + TB_W)} ${pt(y0 + y)} l S`);
+  const V = (x, ya, yb) => o.push(`0.3 w ${pt(x0 + x)} ${pt(y0 + ya)} m ${pt(x0 + x)} ${pt(y0 + yb)} l S`);
+  H(20); H(10); V(70, 10, 30);
+  const cell = (x, y, w, label, val, size, bold) => {
+    o.push(`BT 0.35 0.35 0.35 rg /F1 5 Tf 1 0 0 1 ${pt(x0 + x + 1.2)} ${pt(y0 + y - 2.6)} Tm ${pdfStr(label)} Tj ET`);
+    o.push(txt(x0 + x + 1.2, y0 + y - 7.6, fitTxt(val, size, w - 2.4), size, bold));
+  };
+  cell(0, 30, 70, 'Firma', i.firma, 9, true);
+  cell(70, 30, 115, 'Prosjekt / anlegg', i.prosjekt, 9, true);
+  cell(0, 20, 70, 'Adresse', i.adresse, 8);
+  cell(70, 20, 115, 'Tegning', title, 9, true);
+  const cols = [['Tegningsnr.', i.tegnr, 32], ['Rev.', i.rev, 14], ['Målestokk', '1:' + L.N + ' (' + L.paper + ')', 32], ['Dato', date, 25], ['Tegnet av', i.tegnetAv, 37], ['Status', i.status, 45]];
+  let x = 0;
+  cols.forEach(([lb, v, w], k) => { if (k) V(x, 0, 10); cell(x, 10, w, lb, v, 8, k === 0); x += w; });
+  return o.join('\n');
+}
+// enkel tabell; returnerer [innhold, ny y]
+function pdfTable(x, y, cols, rows, title) {
+  const o = [txt(x, y, title, 12, true)];
+  y -= 8;
+  const W = cols.reduce((a, c) => a + c[1], 0);
+  o.push(`0.92 0.93 0.95 rg ${pt(x)} ${pt(y - 1.8)} ${pt(W)} ${pt(6)} re f`);
+  let cx = x;
+  for (const [h, w] of cols) { o.push(txt(cx + 1.2, y, h, 8, true)); cx += w; }
+  y -= 6.5;
+  for (const r of rows) {
+    cx = x;
+    r.forEach((v, k) => { o.push(txt(cx + 1.2, y, fitTxt(v, 8, cols[k][1] - 2.4), 8, false)); cx += cols[k][1]; });
+    o.push(`0.85 0.85 0.85 RG 0.2 w ${pt(x)} ${pt(y - 2)} m ${pt(x + W)} ${pt(y - 2)} l S`);
+    y -= 5.5;
+  }
+  return [o.join('\n'), y - 6];
+}
+function listsPage(L) {
+  const o = [`0.6 0.6 0.6 RG 0.3 w [] 0 d ${pt(L.m)} ${pt(L.m)} ${pt(L.pw - 2 * L.m)} ${pt(L.ph - 2 * L.m)} re S`];
+  const top = L.ph - L.m - 12, left = L.m + 8;
+  const mat = materialList().map(r => [r.n + ' ' + r.unit, r.name]);
+  const kl = doc.kind === 'dxf' ? kursList().map(r => [r.f, r.nr, r.beskr]) : [];
+  const colW = (L.pw - 2 * L.m - 24) / 2;
+  let [a] = pdfTable(left, top, [['Antall', 22], ['Beskrivelse', colW - 22]], mat, 'Materialliste');
+  o.push(a);
+  if (kl.length) { const [b] = pdfTable(left + colW + 8, top, [['Fordeling', 22], ['Kurs', 16], ['Beskrivelse', colW - 38]], kl, 'Kursliste'); o.push(b); }
+  o.push(titleBlock(L, 'Materialliste og kursliste'));
+  return o.join('\n');
 }
 
 /* ---------- Tegneverktøy for PDF-innhold ---------- */
@@ -206,6 +273,13 @@ function pdfContent(L) {
     fills.get(f.l).push(...f.loops);
   }
   for (const [l, loops] of fills) pen.fill(doc.wall[l] ? '#b4b8bf' : tint(aci(Ls[l].color), 0.65), loops);
+  // bjelkelag (bare på takpunkttegningen)
+  if (expDims() && typeof J === 'function' && J()) {
+    const j = J(), a = L.area, hw = jU(j.w) / 2, loops = [];
+    if (j.dir === 'v') for (const c of joistCentersIn(a.x0 - hw, a.x1 + hw)) loops.push([[c - hw, a.y0], [c + hw, a.y0], [c + hw, a.y1], [c - hw, a.y1]]);
+    else for (const c of joistCentersIn(a.y0 - hw, a.y1 + hw)) loops.push([[a.x0, c - hw], [a.x1, c - hw], [a.x1, c + hw], [a.x0, c + hw]]);
+    pen.fill('#f6dfc0', loops);
+  }
   // linjer per lag
   const byL = Ls.map(() => []);
   const sg = r.segs;
@@ -278,12 +352,8 @@ function pdfContent(L) {
     }
   }
   pen.ops.push('Q');
-  // tittelfelt
-  const date = new Date().toLocaleDateString('no-NO');
-  const title = `${P.name} – ${expDims() ? 'takpunkter, mål i mm til vegg' : 'installasjonstegning'} – målestokk 1:${L.N} (${L.paper}) – ${date}`;
   pen.ops.push(`0.6 0.6 0.6 RG 0.3 w [] 0 d ${pen.n(L.m * MM)} ${pen.n(L.m * MM)} ${pen.n(L.aw * MM)} ${pen.n((L.ah + L.foot) * MM)} re S`);
-  pen.ops.push(`${pen.n(L.m * MM)} ${pen.n((L.m + L.foot) * MM)} m ${pen.n((L.m + L.aw) * MM)} ${pen.n((L.m + L.foot) * MM)} l S`);
-  pen.ops.push(`BT 0 0 0 rg /F1 8 Tf 1 0 0 1 ${pen.n((L.m + 3) * MM)} ${pen.n((L.m + 2.8) * MM)} Tm ${pdfStr(title)} Tj ET`);
+  pen.ops.push(titleBlock(L, expDims() ? 'Takpunkter – mål i mm til vegg' : 'Installasjonstegning'));
   return pen.ops.join('\n');
 }
 
@@ -293,7 +363,8 @@ async function exportPdf(ex) {
   toast('Lager PDF …');
   try {
     let bytes;
-    if (doc.kind === 'dxf') bytes = await makePdf(L.pw * MM, L.ph * MM, pdfContent(L));
+    const extra = ex.lists && !expDims() ? [{ content: listsPage(L) }] : [];
+    if (doc.kind === 'dxf') bytes = await makePdfPages(L.pw * MM, L.ph * MM, [{ content: pdfContent(L) }].concat(extra));
     else {
       // PDF-underlag: bilde av tegningen med punktene, plassert i riktig målestokk
       const a = L.area, wmm = (a.x1 - a.x0) * P.mmPerUnit / L.N, hmm = (a.y1 - a.y0) * P.mmPerUnit / L.N;
@@ -303,10 +374,11 @@ async function exportPdf(ex) {
       const data = new Uint8Array(await blob.arrayBuffer());
       const ox = (L.m + L.aw / 2 - wmm / 2) * MM, oy = (L.m + L.foot + L.ah / 2 - hmm / 2) * MM;
       const date = new Date().toLocaleDateString('no-NO');
+      void date;
       const content = `q ${(L.m * MM).toFixed(2)} ${((L.m + L.foot) * MM).toFixed(2)} ${(L.aw * MM).toFixed(2)} ${(L.ah * MM).toFixed(2)} re W n `
         + `${(wmm * MM).toFixed(2)} 0 0 ${(hmm * MM).toFixed(2)} ${ox.toFixed(2)} ${oy.toFixed(2)} cm /Im1 Do Q\n`
-        + `BT 0 0 0 rg /F1 8 Tf 1 0 0 1 ${((L.m + 3) * MM).toFixed(2)} ${((L.m + 2.8) * MM).toFixed(2)} Tm ${pdfStr(`${P.name} – takpunkter, mål i mm – målestokk 1:${L.N} (${ex.paper}) – ${date}`)} Tj ET`;
-      bytes = await makePdf(L.pw * MM, L.ph * MM, content, { w: c.width, h: c.height, data });
+        + `0.6 0.6 0.6 RG 0.3 w [] 0 d ${pt(L.m)} ${pt(L.m)} ${pt(L.aw)} ${pt(L.ah + L.foot)} re S\n` + titleBlock(L, 'Takpunkter – mål i mm til vegg');
+      bytes = await makePdfPages(L.pw * MM, L.ph * MM, [{ content, image: { w: c.width, h: c.height, data } }]);
     }
     await shareOrDownload(new Blob([bytes], { type: 'application/pdf' }), safeName(P.name) + (expDims() ? '_takpunkter' : '_installasjon') + '.pdf', P.name);
   } catch (e) { console.error(e); toast('Kunne ikke lage PDF: ' + (e.message || e)); }

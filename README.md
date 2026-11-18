@@ -29,3 +29,10 @@ DWG: lagre som DXF i AutoCAD LT først.
 - **Synk**: ☁ på startsiden. Prosjektene lagres i et privat GitHub-repo (fine-grained token med Contents: Read and write, bare for det repoet). Synker automatisk ved endringer og når appen åpnes. Ved konflikt vinner nyeste endring.
 - **Tekst** (T i Utstyr): trykk på en tekst for å endre eller slette den. Flere: Ctrl/Shift+klikk på PC, ⊞ på telefon, hold inne og dra for å flytte (med mus: bare dra). Trykk på et tomt sted for ny tekst. Gjelder både romnavn, merknader og tekstene ved symbolene. Følger med i DXF og PDF.
 - **Kommentar** (💬 på et valgt symbol): f.eks. «Komfyrvakt» eller «plasseres over benk». Hurtigvalg for vanlige kommentarer. Teksten følger symbolet, kan flyttes/endres med tekstverktøyet; når den flyttes et stykke bort, tegnes en strek til symbolet (kan settes til alltid/aldri) og kommer med i DXF (lag E-TEKST) og PDF.
+- **Bilder** (📷): knytt bilder til takpunkter og utstyr, f.eks. av kabler og bjelker før taket kles. Synkes med resten.
+- **Bjelkelag** (meny i Takpunkter): retning, c/c, bredde og hullstørrelse. Punkter som treffer en bjelke får rød ring og knappen «Flytt mellom bjelker».
+- **Materialliste** og **Kursliste** (meny). Kurslisten lages fra det som er koblet med føringer fra første boks, med romnavn fra tegningen. «Til Kursfortegnelse» lager en fil som Kursfortegnelse-appen importerer (Importer fil).
+- **Prosjektinfo** (meny) fyller tittelfeltet på PDF. Installasjonstegningen kan få materialliste og kursliste på side 2.
+- **Åpne fra e-post/Filer**: på Android kan PDF/DXF deles til appen («Del» → Elektrotegning); på PC kan filer åpnes med appen.
+- **Telefon**: føring, tekst og vis-endringer ligger bak 🛠 så paletten får plass. **PC**: Shift + dra i tomt område velger flere symboler (eller tekster), og de kan flyttes/slettes samlet.
+- **Synk** fletter nå endringer per punkt/symbol/føring/tekst når samme prosjekt er endret på to enheter.
