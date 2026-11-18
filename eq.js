@@ -1253,6 +1253,7 @@ function buildPalette() {
     }
     palPointer(b, name);
   });
+  requestAnimationFrame(updFade);
 }
 function setArm(name) {
   if (name && eqTool === 'run') setRunTool(false);
@@ -1361,6 +1362,7 @@ function setEdMode(m) {
   edMode = m;
   document.querySelectorAll('#modeSeg button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
   $('#tools').classList.toggle('eq', m === 'utstyr');
+  requestAnimationFrame(updFade);
   setArm(null); if (eqTool === 'run') setRunTool(false); if (eqTool === 'text') setTextTool(false);
   eqSel = null; runSel = null; eqSet.clear(); select(null); updateEqBar(); updToolsBtn(); updateTitle(); req();
 }

@@ -1492,6 +1492,15 @@ $('#menuBtn').onclick = () => P && openMenu();
 $('#listBtn').onclick = () => P && openList();
 
 /* Verktøylinje */
+// Uton høyre kant av paletter som kan rulles, så det synes at det finnes flere symboler
+function updFade() {
+  for (const id of ['pal', 'chips']) {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('fade', el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  }
+}
+['pal', 'chips'].forEach(id => document.getElementById(id).addEventListener('scroll', updFade, { passive: true }));
+window.addEventListener('resize', () => setTimeout(updFade, 50));
 function buildChips() {
   const el = $('#chips');
   el.innerHTML = Object.entries(TYPES).map(([k, t]) => `<button class="chip ${k === curType ? 'on' : ''}" data-t="${k}"><canvas width="40" height="40"></canvas>${t.name}</button>`).join('');
@@ -1506,6 +1515,7 @@ function buildChips() {
       if (!placing) setPlacing(true);
     };
   });
+  requestAnimationFrame(updFade);
 }
 function setPlacing(on) {
   placing = on;
