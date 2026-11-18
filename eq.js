@@ -733,6 +733,20 @@ function noteDisp(it) {
   const li = Math.max(0, layerIndex(noteLayer(it)));
   return { x: c.x + cs * loc.lx - sn * loc.ly, y: c.y + sn * loc.lx + cs * loc.ly, h: noteH(), rot: 0, ha: 'center', va: 'middle', s: n.s, l: li };
 }
+// strek fra kommentar til symbol: alltid / aldri / automatisk (når kommentaren er flyttet et stykke unna)
+function noteLeader(it) {
+  const n = P.eq.notes[it.key], d = noteDisp(it);
+  if (!d || n.leader === false) return null;
+  const mpu = P.mmPerUnit || 1, g = doc.geom(it.block), rad = g ? g.rad * Math.abs(it.sx) : 100 / mpu, c = itemCenter(it);
+  const dx = c.x - d.x, dy = c.y - d.y, L = Math.hypot(dx, dy);
+  if (n.leader !== true && (n.lx == null || L < rad + 450 / mpu)) return null;
+  if (L < 1e-6) return null;
+  const ux = dx / L, uy = dy / L, pad = d.h * 0.35;
+  const hw = textW(d.s, d.h * 100 / 70) / 2 + pad, hh = d.h / 2 + pad;
+  const t = Math.min(Math.abs(ux) > 1e-9 ? hw / Math.abs(ux) : Infinity, Math.abs(uy) > 1e-9 ? hh / Math.abs(uy) : Infinity);
+  if (t >= L - rad) return null;
+  return { a: { x: d.x + ux * t, y: d.y + uy * t }, b: { x: c.x - ux * rad * 0.9, y: c.y - uy * rad * 0.9 } };
+}
 function setNoteWorld(it, w) {
   const n = notesMap()[it.key], c = itemCenter(it), cs = Math.cos(-it.r), sn = Math.sin(-it.r), dx = w.x - c.x, dy = w.y - c.y;
   n.lx = cs * dx - sn * dy; n.ly = sn * dx + cs * dy;
@@ -742,7 +756,14 @@ function drawNotes(ctx, v, dpr, W, H) {
   if (!m) return;
   ctx.save();
   ctx.setTransform(dpr * v.s, 0, 0, dpr * v.s, dpr * v.tx, dpr * v.ty);
-  for (const k of Object.keys(m)) { const it = itemByKey(k), d = it && noteDisp(it); if (d) drawText(ctx, d, v, W, H, aci(doc.r.layers[d.l].color), 0, 0); }
+  for (const k of Object.keys(m)) {
+    const it = itemByKey(k), d = it && noteDisp(it);
+    if (!d) continue;
+    const col = aci(doc.r.layers[d.l].color);
+    drawText(ctx, d, v, W, H, col, 0, 0);
+    const ld = noteLeader(it);
+    if (ld) { ctx.strokeStyle = col; ctx.lineWidth = 1 / v.s; ctx.beginPath(); ctx.moveTo(ld.a.x, ld.a.y); ctx.lineTo(ld.b.x, ld.b.y); ctx.stroke(); }
+  }
   ctx.restore();
 }
 function noteDlg(it) {
@@ -750,15 +771,18 @@ function noteDlg(it) {
   dialog(`<h2>Kommentar</h2><p>Vises ved symbolet og følger det når det flyttes.</p>
     <div class="quick">${NOTE_SUGG.map(s => `<button data-s="${esc(s)}">${esc(s)}</button>`).join('')}</div>
     <input id="nIn" autocomplete="off" placeholder="Egen tekst, f.eks. plasseres over benk" value="${esc(cur ? cur.s : '')}">
+    <div class="setrow"><span>Strek til symbolet</span><select id="nLd"><option value="auto">Automatisk</option><option value="on">Alltid</option><option value="off">Aldri</option></select></div>
+    <p style="font-size:13px">Automatisk: strek når kommentaren er flyttet et stykke bort fra symbolet (med tekstverktøyet T).</p>
     <div class="btns">${cur ? '<button class="danger" data-del>Fjern</button>' : ''}<button data-x>Avbryt</button><button class="primary" data-ok>OK</button></div>`, (el, close) => {
-    const inp = $('#nIn', el);
+    const inp = $('#nIn', el), ld = $('#nLd', el);
+    ld.value = !cur || cur.leader == null ? 'auto' : cur.leader ? 'on' : 'off';
     if (!matchMedia('(pointer: coarse)').matches) setTimeout(() => inp.focus(), 60);
     const ok = () => {
       const v = inp.value.trim();
       if (!v) return;
       pushUndo();
       const m = notesMap();
-      m[it.key] = Object.assign(m[it.key] || {}, { s: v });
+      m[it.key] = Object.assign(m[it.key] || {}, { s: v, leader: ld.value === 'auto' ? undefined : ld.value === 'on' });
       close(); save(); updateEqBar(); req();
     };
     el.querySelectorAll('[data-s]').forEach(b => b.onclick = () => { inp.value = b.dataset.s; ok(); });
@@ -1221,6 +1245,8 @@ function eqChanges() {
     const it = itemByKey(k), d = it && noteDisp(it);
     if (!d) continue;
     addedRaw.push({ type: 'TEXT', pairs: [[100, 'AcDbEntity'], [8, noteLayer(it)], [100, 'AcDbText'], [10, f(d.x)], [20, f(-d.y)], [30, '0'], [40, f(d.h)], [1, d.s], [72, '1'], [11, f(d.x)], [21, f(-d.y)], [31, '0'], [100, 'AcDbText'], [73, '2']] });
+    const ld = noteLeader(it);
+    if (ld) addedRaw.push({ type: 'LINE', pairs: [[100, 'AcDbEntity'], [8, noteLayer(it)], [100, 'AcDbLine'], [10, f(ld.a.x)], [20, f(-ld.a.y)], [30, '0'], [11, f(ld.b.x)], [21, f(-ld.b.y)], [31, '0']] });
   }
   for (const a of txtStore().added) {
     const lines = a.s.split('\n'), ls = 1.66 * a.h;
