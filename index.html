@@ -79,6 +79,9 @@
   #sel.on { display: block; }
   #sel .row { display: flex; align-items: center; gap: 8px; }
   #sel .row b { flex: 1; }
+  .selb { display: flex; align-items: center; gap: 6px; padding: 7px 12px; }
+  .card .thumb { width: 64px; height: 48px; border-radius: 8px; background: #fff; flex: none; object-fit: contain; }
+  .card .more { width: 40px; height: 40px; padding: 0; display: grid; place-items: center; background: transparent; border-color: transparent; color: var(--muted); }
   #sel .dims { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0 4px; }
   .dimbtn { display: flex; flex-direction: column; align-items: flex-start; padding: 8px 12px; text-align: left; }
   .dimbtn .lab { font-size: 12px; color: var(--muted); }
@@ -93,8 +96,6 @@
   .chip { flex: none; display: flex; align-items: center; gap: 6px; padding: 7px 11px; border-radius: 999px; font-size: 14px; }
   .chip.on { background: #fff; color: #111; border-color: #fff; font-weight: 600; }
   .chip canvas { width: 20px; height: 20px; }
-  #placeBtn { flex: none; border-radius: 999px; padding: 8px 12px; font-weight: 600; }
-  #placeBtn.on { background: var(--accent); border-color: var(--accent); color: #111; }
 
   /* Dialoger */
   #modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; z-index: 20;
@@ -160,7 +161,6 @@
     .pchip { min-width: 0; max-width: none; }
     #tools > button { width: 100% !important; height: auto !important; padding: 10px 12px !important; border-radius: 10px !important; text-align: left; font-size: 15px !important; }
     #tools > button[data-label]::after { content: "  " attr(data-label); }
-    #tools #placeBtn, #tools #rowBtn { order: -1; }
     .dlg { max-width: 520px; }
     #cv { cursor: crosshair; }
   }
@@ -176,7 +176,6 @@
   #toolPop.on { display: flex; }
   #toolPop button { text-align: left; padding: 12px 14px; font-size: 16px; }
   #toolPop button.on { background: var(--accent); border-color: var(--accent); color: #111; }
-  /* telefon: føring, tekst og vis-endringer samles bak 🛠 så paletten får plass */
   @media (max-width: 899px) {
     #ed.eqsel #tools { display: none; }
   }
@@ -185,9 +184,7 @@
   #npick button { width: 40px; height: 40px; padding: 0; border-radius: 999px; background: #273244; border: none; color: #fff; font-weight: 700; font-size: 16px; }
   #npick button.on { background: var(--accent); color: #111; }
   #eqbar button.num { width: auto; padding: 0 12px; font-weight: 700; font-size: 15px; }
-  #tools.eq #chips, #tools.eq #placeBtn, #tools.eq #rowBtn { display: none; }
-  #rowBtn { flex: none; border-radius: 999px; padding: 8px 12px; font-weight: 600; }
-  #rowBtn.on { background: #0d9488; border-color: #0d9488; color: #fff; }
+  #tools.eq #chips { display: none; }
   #tools.eq #pal { display: flex; }
   #pal { flex: 1; gap: 6px; overflow-x: auto; scrollbar-width: none; touch-action: pan-x; }
   #pal::-webkit-scrollbar { display: none; }
@@ -202,13 +199,16 @@
   #tools.eq { flex-direction: column; align-items: stretch; gap: 6px; padding-bottom: calc(4px + var(--safe-b)); }
   #tools.eq #pal { flex: none; }
   #tools.eq #eqnav { display: flex; }
+  #tools:not(.eq) { flex-direction: column; align-items: stretch; gap: 6px; padding-bottom: calc(4px + var(--safe-b)); }
+  #tpnav { display: flex; align-items: stretch; gap: 4px; border-top: 1px solid var(--line); padding-top: 6px; }
+  #tools.eq #tpnav { display: none; }
   #eqnav { align-items: stretch; gap: 4px; border-top: 1px solid var(--line); padding-top: 6px; }
-  #eqnav .nv { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 0 3px; background: transparent; border: none;
+  #eqnav .nv, #tpnav .nv { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 0 3px; background: transparent; border: none;
     border-radius: 12px; color: var(--muted); font-size: 12px; position: relative; }
-  #eqnav .nv svg { width: 34px; height: 26px; padding: 2px 6px; border-radius: 13px; box-sizing: content-box; }
-  #eqnav .nv.on { color: #fdba74; font-weight: 700; }
-  #eqnav .nv.on svg { background: rgba(249,115,22,.22); }
-  #eqnav .nv.on::before { content: ''; position: absolute; top: -7px; left: 30%; right: 30%; height: 3px; border-radius: 3px; background: var(--accent); }
+  #eqnav .nv svg, #tpnav .nv svg { width: 34px; height: 26px; padding: 2px 6px; border-radius: 13px; box-sizing: content-box; }
+  #eqnav .nv.on, #tpnav .nv.on { color: #fdba74; font-weight: 700; }
+  #eqnav .nv.on svg, #tpnav .nv.on svg { background: rgba(249,115,22,.22); }
+  #eqnav .nv.on::before, #tpnav .nv.on::before { content: ''; position: absolute; top: -7px; left: 30%; right: 30%; height: 3px; border-radius: 3px; background: var(--accent); }
   .nvtog { flex: 1.25; display: flex; align-items: center; gap: 6px; padding: 4px 8px; margin-left: 4px; background: transparent; border: none;
     border-left: 1px solid var(--line); border-radius: 0; color: var(--muted); text-align: left; }
   .nvtog span { display: flex; flex-direction: column; line-height: 1.15; min-width: 0; }
@@ -267,16 +267,16 @@
   <header>
     <h1>Elektro<span>tegning</span></h1>
     <button id="installBtn" style="display:none">Installer</button>
-    <button id="syncBtn" aria-label="Synk">☁</button>
+    <button id="syncBtn" aria-label="Synk"><svg class="ic" viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 9.5A4.3 4.3 0 0 0 7 18z"/></svg></button>
   </header>
   <div id="homeBody">
     <div id="syncState"></div>
     <button class="newbtn" id="newBtn">＋ Last inn tegning (PDF / DXF)</button>
     <div id="plist"></div>
     <div class="hint" id="homeHint">
-      <b>Slik virker det:</b> Last inn en plantegning, trykk der lyset skal sitte. Målet til nærmeste vegg i X og Y vises med en gang.
-      <b>Hold inne</b> på et symbol for å flytte det. <b>Trykk på et mål</b> for å skrive det inn selv.<br><br>
-      <b>DWG:</b> Lagre som DXF i AutoCAD LT (Lagre som → AutoCAD 2018 DXF) og last inn den.
+      <b>Utstyr:</b> Flytt, legg til og fjern utstyr på DXF-tegningen slik det faktisk ble montert, og del installasjonstegningen med kunden.<br><br>
+      <b>Takpunkter:</b> Merk downlights og andre takpunkter med mål til nærmeste vegg, så hullene kan bores etter at taket er kledd.<br><br>
+      <b>DWG:</b> Lagre som DXF i AutoCAD (Lagre som → AutoCAD 2018 DXF) og last inn den.
     </div>
   </div>
 </section>
@@ -289,7 +289,7 @@
     <button class="ib" id="undoBtn" aria-label="Angre" title="Angre (Ctrl+Z)"><svg class="ic" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
     <button class="ib" id="menuBtn" aria-label="Meny"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="12" cy="19" r="1.2"/></svg></button>
   </div>
-  <div id="modeSeg"><button data-m="utstyr" class="on">🔌 Utstyr</button><button data-m="mal">📏 Takpunkter</button></div>
+  <div id="modeSeg"><button data-m="utstyr" class="on">Utstyr</button><button data-m="mal">Takpunkter</button></div>
   <div id="stage">
     <canvas id="cv"></canvas>
     <div id="npick"></div>
@@ -304,9 +304,9 @@
   <div id="sel">
     <div class="row">
       <b id="selTitle">#1</b>
-      <button id="selPhoto" title="Bilder">📷</button>
+      <button id="selPhoto" title="Bilder" class="selb"><svg class="ic" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span>Bilde</span></button>
       <button id="selDel" class="danger">Slett</button>
-      <button id="selClose" class="ghost">✕</button>
+      <button id="selClose" class="ghost ib" aria-label="Lukk"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
     <div id="selWarn" style="color:#fca5a5;font-size:13px"></div>
     <div class="dims">
@@ -317,8 +317,12 @@
   <div id="eqbar" aria-live="polite"></div>
   <div id="tools">
     <div id="chips"></div>
-    <button id="placeBtn" class="on">＋ Plasser</button>
-    <button id="rowBtn" aria-label="Lag rad">⋯ Rad</button>
+    <div id="tpnav" role="toolbar" aria-label="Verktøy for takpunkter">
+      <button id="placeBtn" class="nv on" aria-pressed="true"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v8M8 12h8"/></svg><span>Plasser</span></button>
+      <button id="tpSelBtn" class="nv" aria-pressed="false"><svg class="ic" viewBox="0 0 24 24"><path d="M6 3l12 9l-6 1l3 7l-3 1l-3-7l-3 4z"/></svg><span>Velg</span></button>
+      <button id="rowBtn" class="nv" aria-pressed="false"><svg class="ic" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg><span>Rad</span></button>
+      <button id="tpListBtn" class="nv"><svg class="ic" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 6h.5M4 12h.5M4 18h.5"/></svg><span>Punktliste</span></button>
+    </div>
     <div id="pal"></div>
     <div id="eqnav" role="toolbar" aria-label="Verktøy">
       <button id="selBtn" class="nv on" aria-pressed="true"><svg class="ic" viewBox="0 0 24 24"><path d="M6 3l12 9l-6 1l3 7l-3 1l-3-7l-3 4z"/></svg><span>Velg</span></button>

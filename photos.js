@@ -33,7 +33,7 @@ function openPhotos(key, title) {
   const urls = [];
   dialog(`<h2>Bilder – ${esc(title)}</h2>
     <div id="phGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:8px 0">${ids.length ? '' : '<p style="grid-column:1/-1">Ingen bilder ennå.</p>'}</div>
-    <label class="primary" style="display:block;text-align:center;padding:12px;border-radius:10px;background:var(--accent);color:#111;font-weight:600;cursor:pointer">📷 Ta bilde / velg bilde
+    <label class="primary" style="display:block;text-align:center;padding:12px;border-radius:10px;background:var(--accent);color:#111;font-weight:600;cursor:pointer">Ta bilde / velg bilde
       <input type="file" id="phIn" accept="image/*" capture="environment" multiple style="display:none"></label>
     <div class="btns"><button data-x>Lukk</button></div>`, (el, close) => {
     const grid = $('#phGrid', el);

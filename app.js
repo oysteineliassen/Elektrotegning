@@ -850,7 +850,7 @@ function updatePanel() {
   if ($('#selXs').textContent !== xs) $('#selXs').textContent = xs;
   if ($('#selYs').textContent !== ys) $('#selYs').textContent = ys;
   const ji = typeof joistInfo === 'function' && joistInfo(p);
-  const w = ji && ji.hit ? `⚠ Hullet treffer bjelke (${Math.round(ji.need * P.mmPerUnit)} mm for nær) <button id="selGap">Flytt mellom bjelker</button>` : '';
+  const w = ji && ji.hit ? `<svg class="ic" viewBox="0 0 24 24" style="width:18px;height:18px;vertical-align:-3px"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></svg> Hullet treffer bjelke (${Math.round(ji.need * P.mmPerUnit)} mm for nær) <button id="selGap">Flytt mellom bjelker</button>` : '';
   const el = $('#selWarn');
   if (el.dataset.k !== w) { el.dataset.k = w; el.innerHTML = w; const b = $('#selGap'); if (b) b.onclick = () => { const q = P.points.find(z => z.id === selId); if (q) moveToGap(q); }; }
 }
@@ -1021,13 +1021,13 @@ function editSpacing(p, q, side) {
 function startRow() {
   if (!P.mmPerUnit) { askScale(); return; }
   mode = 'row'; rowPts = []; rowPreview = null; select(null);
-  $('#rowBtn').classList.add('on');
+  updTpNav();
   setBanner(`Rad (${(TYPES[curType] || TYPES.downlight).name}): trykk der raden starter`, 'Avbryt', endRow);
   req();
 }
 function endRow() {
   mode = 'edit'; rowPts = []; rowPreview = null;
-  $('#rowBtn').classList.remove('on');
+  updTpNav();
   setBanner(null); req();
 }
 function rowDialog() {
@@ -1312,7 +1312,7 @@ function shareOrDownload(blob, filename, title) {
   const kb = blob.size > 1e6 ? (blob.size / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(blob.size / 1e3)) + ' kB';
   return new Promise(res => {
     dialog(`<h2>Fil klar</h2><p>${esc(filename)} · ${kb}</p>
-      <div class="menu"><button class="primary" data-dl>⬇ Last ned / lagre</button>${canShare ? '<button data-sh>↗ Del til app …</button>' : ''}</div>
+      <div class="menu"><button class="primary" data-dl>Last ned / lagre</button>${canShare ? '<button data-sh>Del til app …</button>' : ''}</div>
       <div class="btns"><button data-x>Lukk</button></div>`, (el, close) => {
       $('[data-x]', el).onclick = () => { close(); res(); };
       $('[data-dl]', el).onclick = () => { close(); downloadBlob(blob, filename); res(); };
@@ -1368,22 +1368,28 @@ async function exportBackup(proj) {
 }
 
 /* ---------------- Prosjekter ---------------- */
+function projCounts(p) {
+  const n = p.points.length, parts = [];
+  if (p.kind === 'dxf' && p.eqCount != null) parts.push(p.eqCount + ' utstyr');
+  parts.push(n + (n === 1 ? ' takpunkt' : ' takpunkter'));
+  return parts.join(' · ');
+}
 async function renderHome() {
   const list = (await store.all()).sort((a, b) => (b.updated || 0) - (a.updated || 0));
   const el = $('#plist');
   if (!list.length) { el.innerHTML = '<div class="empty">Ingen tegninger ennå.</div>'; return; }
   el.innerHTML = list.map(p => `<div class="card" data-id="${p.id}">
-      <div class="ic">${p.kind.toUpperCase()}</div>
-      <div class="t"><b>${esc(p.name)}</b><small>${p.points.length} punkter · ${new Date(p.updated || p.created).toLocaleDateString('no-NO')}</small></div>
-      <button data-more="${p.id}">⋯</button></div>`).join('');
+      ${p.thumb ? `<img class="thumb" src="${p.thumb}" alt="">` : `<div class="ic">${p.kind.toUpperCase()}</div>`}
+      <div class="t"><b>${esc(p.name)}</b><small>${projCounts(p)} · ${new Date(p.updated || p.created).toLocaleDateString('no-NO')}</small></div>
+      <button class="more" data-more="${p.id}" aria-label="Mer"><svg class="ic" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg></button></div>`).join('');
   el.querySelectorAll('.card').forEach(c => c.onclick = e => {
-    if (e.target.dataset.more) return;
+    if (e.target.closest('[data-more]')) return;
     const p = list.find(q => q.id === c.dataset.id); if (p) openProject(p);
   });
   el.querySelectorAll('[data-more]').forEach(b => b.onclick = () => {
     const p = list.find(q => q.id === b.dataset.more);
     dialog(`<h2>${esc(p.name)}</h2><div class="menu">
-      <button data-a="ren">✎ Gi nytt navn</button><button data-a="bak">💾 Eksporter backup</button>
+      <button data-a="ren">Gi nytt navn</button><button data-a="bak">Sikkerhetskopi av prosjekt med bilder</button>
       <button data-a="del" class="danger">Slett tegning</button></div><div class="btns"><button data-x>Lukk</button></div>`, (el2, close) => {
       $('[data-x]', el2).onclick = close;
       el2.querySelectorAll('[data-a]').forEach(x => x.onclick = () => {
@@ -1440,15 +1446,48 @@ async function openProject(p, fresh) {
   if (!P.mmPerUnit) askScale();
   else if (fresh && !P.points.length) toast('Trykk på tegningen for å plassere');
 }
+function updateThumb() {
+  try {
+    const c = renderExportCanvas(220, false);
+    const t = c.toDataURL('image/jpeg', 0.7);
+    const n = typeof EQ !== 'undefined' && doc && doc.kind === 'dxf' ? EQ.items.filter(i => !i.del).length : null;
+    if (t !== P.thumb || n !== P.eqCount) { P.thumb = t; P.eqCount = n; return true; }
+  } catch (e) { }
+  return false;
+}
 async function closeEditor() {
+  // forhåndsvisningen er lokal: lagres uten å merke prosjektet som endret for synk
+  const th = P && doc && updateThumb();
+  if (th && !savePending) await store.put({ ...P, points: P.points.map(clean) }, true).catch(() => { });
   await flushSave();
   if (doc && doc.pdf) try { doc.pdf.destroy(); } catch (e) { }
   P = null; doc = null; selId = null; setBanner(null); eqSel = null; eqArm = null;
   $('#eqbar').classList.remove('on'); $('#modeSeg').classList.remove('on'); $('#tools').classList.remove('eq');
   show('home'); renderHome();
 }
-$('#backBtn').onclick = () => { if (history.state && history.state.ed) history.back(); else closeEditor(); };
-window.addEventListener('popstate', () => { if (dlgClose) { dlgClose(); try { history.pushState({ ed: 1 }, ''); } catch (e) { } return; } if (P) closeEditor(); });
+let leaving = false; // ← i toppfeltet lukker tegningen direkte; telefonens tilbake-knapp går ett steg om gangen
+$('#backBtn').onclick = () => { if (dlgClose) dlgClose(); if (history.state && history.state.ed) { leaving = true; history.back(); } else closeEditor(); };
+// Tilbake / Esc: lukk det øverste først – dialog, tallvelger, modus, valg – før tegningen lukkes
+function backStep() {
+  if (dlgClose) { dlgClose(); return true; }
+  if (!P) return false;
+  const eq = typeof eqActive === 'function' && eqActive();
+  if ($('#npick').classList.contains('on')) { $('#npick').classList.remove('on'); return true; }
+  if (mode === 'row') { endRow(); return true; }
+  if (mode === 'calib') { $('#bannerBtn').click(); return true; }
+  if (mode === 'joist') { $('#bannerBtn').click(); return true; }
+  if (eq && eqTool === 'run') { if (runSel) { runSel = null; updateEqBar(); req(); } else setRunTool(false); updToolsBtn(); return true; }
+  if (eq && eqTool === 'text') { if (txtSel) { txtClear(); txtMulti = false; updateEqBar(); req(); } else setTextTool(false); updToolsBtn(); return true; }
+  if (eq && (eqSet.size || eqSel || runSel)) { eqSet.clear(); eqSel = null; runSel = null; updateEqBar(); req(); return true; }
+  if (eq && eqArm) { setArm(null); return true; }
+  if (selId) { select(null); return true; }
+  return false;
+}
+window.addEventListener('popstate', () => {
+  if (leaving) { leaving = false; if (P) closeEditor(); return; }
+  if (backStep()) { try { history.pushState({ ed: 1 }, ''); } catch (e) { } return; }
+  if (P) closeEditor();
+});
 $('#menuBtn').onclick = () => P && openMenu();
 $('#listBtn').onclick = () => P && openList();
 
@@ -1471,11 +1510,18 @@ function buildChips() {
 function setPlacing(on) {
   placing = on;
   const b = $('#placeBtn');
-  b.classList.toggle('on', on);
-  b.textContent = on ? '＋ Plasser' : '✋ Se';
+  updTpNav();
 }
+function updTpNav() {
+  const row = mode === 'row';
+  for (const [id, on] of [['placeBtn', placing && !row], ['tpSelBtn', !placing && !row], ['rowBtn', row]]) {
+    const b = $('#' + id); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+}
+$('#tpSelBtn').onclick = () => { if (mode === 'row') endRow(); setPlacing(false); };
+$('#tpListBtn').onclick = () => P && openList();
 $('#rowBtn').onclick = () => { if (mode === 'row') endRow(); else startRow(); };
-$('#placeBtn').onclick = () => { setPlacing(!placing); toast(placing ? 'Trykk på tegningen for å plassere' : 'Plassering av – trykk velger bare'); };
+$('#placeBtn').onclick = () => { if (mode === 'row') endRow(); setPlacing(true); };
 
 /* ---------------- Innlasting av fil ---------------- */
 $('#newBtn').onclick = () => $('#fileIn').click();
@@ -1599,22 +1645,13 @@ cv.addEventListener('pointermove', e => {
   cv.style.cursor = hit ? 'pointer' : (mode === 'edit' && !placing && !eqActive() ? 'grab' : 'crosshair');
 });
 document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && $('#modal').classList.contains('on') && !$('#dlg').dataset.lock && dlgClose) { dlgClose(); return; }
   if (!P || !doc || $('#modal').classList.contains('on')) return;
   if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement && document.activeElement.tagName)) return;
   const k = e.key, ctrl = e.ctrlKey || e.metaKey;
   const eq = typeof eqActive === 'function' && eqActive();
   if (ctrl && (k === 'z' || k === 'Z')) { e.preventDefault(); $('#undoBtn').click(); return; }
-  if (k === 'Escape') {
-    if (mode === 'row') endRow();
-    else if (mode === 'calib') $('#bannerBtn').click();
-    else if (eq && eqTool === 'run') setRunTool(false);
-    else if (eq && eqTool === 'text' && !txtSel) setTextTool(false);
-    else if (eq && txtSel) { txtClear(); txtMulti = false; updateEqBar(); req(); }
-    else if (eq && eqSet.size) { eqSet.clear(); eqSel = null; updateEqBar(); req(); }
-    else if (eq && eqArm) setArm(null);
-    else { select(null); if (eq) { eqSel = null; runSel = null; updateEqBar(); req(); } }
-    return;
-  }
+  if (k === 'Escape') { backStep(); return; }
   if (k === 'Delete' || k === 'Backspace') {
     e.preventDefault();
     if (eq && eqSet.size > 1) groupDelete();

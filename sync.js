@@ -60,7 +60,7 @@ function b64utf8(s) {
   return btoa(out);
 }
 function cleanProject(p) {
-  const { _d, ...r } = p;
+  const { _d, thumb, eqCount, ...r } = p;
   return { ...r, points: (p.points || []).map(q => { const { _d, ...x } = q; return x; }) };
 }
 
@@ -156,6 +156,7 @@ async function syncNow() {
         const buf = await (await gh('/contents/files/' + R.id, { raw: true })).arrayBuffer();
         await store.putFile(R.id, new Blob([buf], { type: R.kind === 'pdf' ? 'application/pdf' : 'application/octet-stream' }));
       }
+      const L0 = lmap[R.id]; if (L0 && L0.thumb && !R.thumb) { R.thumb = L0.thumb; R.eqCount = L0.eqCount; }
       await store.put(R, true);
       await saveBase(R);
       SYNC.meta[R.id] = { sha, dirty: 0 };
