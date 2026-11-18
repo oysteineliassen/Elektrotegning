@@ -244,12 +244,7 @@ function drawEquip(ctx, v, dpr, o, W, H) {
     if (it.labels.length) {
       ctx.save();
       ctx.setTransform(dpr * v.s, 0, 0, dpr * v.s, dpr * v.tx, dpr * v.ty);
-      const dr = it.r - it.or, c = Math.cos(dr), sn = Math.sin(dr);
-      for (let t of it.labels) {
-        if (t === it.numLabel) { if (it.n < 2) continue; if (it.n !== it.n0) t = { ...t, s: String(it.n) }; }
-        const ax = t.x - it.ox, ay = t.y - it.oy;
-        drawText(ctx, t, v, W, H, col, it.x + c * ax - sn * ay - t.x, it.y + sn * ax + c * ay - t.y);
-      }
+      for (const t of it.labels) { const d = labelDisp(it, t); if (d) drawText(ctx, d, v, W, H, col, 0, 0); }
       ctx.restore();
     }
     if (!it.numLabel && it.n >= 2 && EQ.num[it.block]) {
@@ -268,6 +263,8 @@ function drawEquip(ctx, v, dpr, o, W, H) {
       ctx.lineWidth = 1.5; ctx.strokeStyle = '#fff'; ctx.stroke();
     }
   }
+  drawAddedTexts(ctx, v, dpr, W, H);
+  if (!o.export && edMode === 'utstyr' && txtSel) drawTextSel(ctx, v, dpr);
   if (!o.export && edMode === 'utstyr' && runStart) {
     const it = itemByKey(runStart);
     if (it) {
@@ -306,6 +303,7 @@ function hitItem(x, y) {
 function eqSelect(key) { eqSel = key; updateEqBar(); req(); }
 
 function eqTap(x, y, g) {
+  if (eqTool === 'text') { textTap(x, y, g); return; }
   if (g.hk) { editKurs(g.hk); return; }
   if (eqTool === 'run') {
     if (g.hi) {
@@ -458,10 +456,12 @@ function updateEqBar() {
   $('#npick').classList.remove('on');
   const run = runSel && (P.eq.runs || []).find(r => r.id === runSel);
   const it = !run && eqSel && itemByKey(eqSel);
-  if (!eqActive() || (!run && (!it || it.del)) || (gest && gest.type === 'idrag')) { bar.classList.remove('on'); bar.dataset.k = ''; return; }
+  const te = eqTool === 'text' && txtSel && allTextDisp().find(q => q.key === txtSel);
+  if (!eqActive() || (!te && !run && (!it || it.del)) || (gest && (gest.type === 'idrag' || gest.type === 'tdrag'))) { bar.classList.remove('on'); bar.dataset.k = ''; return; }
   let html;
   const kb = it ? `<button class="num" data-a="kurs" title="Kursnummer (første boks etter tavla)">${kursOf(it.key) ? esc(kursText(kursOf(it.key)).replace('\n', '')) : 'Kurs'}</button>` : '';
-  if (it && it.isPt) html = `<b>${esc((TYPES[it.pt.type] || TYPES.downlight).name)}</b>${kb}<button data-a="del" title="Slett">🗑</button>`;
+  if (te) html = `<b>Tekst</b><button data-a="tedit" title="Endre tekst">✎</button>` + (!te.added && txtEd(te.key) ? `<button data-a="treset" title="Tilbake til original">↺</button>` : '') + `<button data-a="tdel" title="Slett">🗑</button>`;
+  else if (it && it.isPt) html = `<b>${esc((TYPES[it.pt.type] || TYPES.downlight).name)}</b>${kb}<button data-a="del" title="Slett">🗑</button>`;
   else if (run) html = `<b>Føring</b><button data-a="rflip" title="Bøy andre veien">⇅</button><button data-a="rbend" title="Mer/mindre bue">⌒</button><button data-a="rdel" title="Slett">🗑</button>`;
   else html = `<b>${esc(prettyBlock(it.block))}${it.added ? ' · ny' : isMoved(it) ? ' · flyttet' : ''}</b>`
     + (countable(it.block) ? `<button class="num" data-a="n" title="Antall uttak">${it.n}×</button>` : '') + kb
@@ -477,6 +477,7 @@ function updateEqBar() {
   positionEqBar();
 }
 function selAnchor() {
+  if (eqTool === 'text' && txtSel) return txtAnchor();
   const run = runSel && (P.eq.runs || []).find(r => r.id === runSel);
   if (run) { const g = runGeom(run); return g ? { x: g.apex.x * view.s + view.tx, y: g.apex.y * view.s + view.ty, r: 14 } : null; }
   const it = itemByKey(eqSel);
@@ -512,6 +513,7 @@ function openNPick(it) {
   positionEqBar();
 }
 function eqAction(a) {
+  if (a === 'tedit' || a === 'treset' || a === 'tdel') return textAction(a);
   if (a[0] === 'r' && a !== 'rot' && a !== 'reset') return runAction(a);
   const it = itemByKey(eqSel);
   if (!it) return;
@@ -681,6 +683,168 @@ function kursExport(layer) {
   return out;
 }
 
+/* ---------- Tekster: flytt, endre, slett og legg til ---------- */
+let txtSel = null;
+function txtStore() { if (!P.eq) P.eq = { edits: {}, added: [] }; return (P.eq.texts = P.eq.texts || { edits: {}, added: [] }); }
+function tKey(t) { return t && t.rec ? 't' + t.rec.ln : null; }
+function txtEd(k) { return k && P && P.eq && P.eq.texts ? P.eq.texts.edits[k] : null; }
+function staticDisp(t) {
+  const e = txtEd(tKey(t));
+  if (!e) return t;
+  if (e.del) return null;
+  return { ...t, x: t.x + (e.dx || 0), y: t.y + (e.dy || 0), s: e.s != null ? e.s : t.s };
+}
+function labelDisp(it, t) {
+  const e = txtEd(tKey(t)) || {};
+  if (e.del) return null;
+  let s = e.s != null ? e.s : t.s;
+  if (t === it.numLabel) { if (it.n < 2) return null; s = String(it.n); }
+  const dr = it.r - it.or, c = Math.cos(dr), sn = Math.sin(dr), ax = t.x - it.ox, ay = t.y - it.oy;
+  return { ...t, x: it.x + c * ax - sn * ay + (e.dx || 0), y: it.y + sn * ax + c * ay + (e.dy || 0), s };
+}
+function addedDisp(a) { return { x: a.x, y: a.y, h: a.h, rot: 0, ha: 'left', va: 'alphabetic', s: a.s, l: Math.max(0, layerIndex(a.layer)) }; }
+// alle tekster som kan velges, med posisjonen de vises på
+function allTextDisp() {
+  const out = [];
+  for (const t of doc.texts) {
+    if (t.item || !t.rec || !doc.show[t.l]) continue;
+    const d = staticDisp(t); if (d) out.push({ key: tKey(t), d, base: t });
+  }
+  for (const it of EQ.items) {
+    if (it.del || !doc.show[it.li]) continue;
+    for (const t of it.labels) { const d = labelDisp(it, t); if (d) out.push({ key: tKey(t), d, base: t, item: it }); }
+  }
+  for (const a of ((P.eq && P.eq.texts && P.eq.texts.added) || [])) out.push({ key: 'n' + a.id, d: addedDisp(a), added: a });
+  return out;
+}
+// tekstens grenser i dens eget (roterte) koordinatsystem
+function textBox(d) {
+  const fs = d.h * 100 / 70, lines = String(d.s).split('\n'), ls = 1.66 * d.h;
+  const w = Math.max(...lines.map(l => textW(l, fs))), hh = d.h + (lines.length - 1) * ls;
+  const x0 = d.ha === 'center' ? -w / 2 : d.ha === 'right' ? -w : 0;
+  const y0 = d.va === 'top' ? 0 : d.va === 'middle' ? -hh / 2 : d.va === 'bottom' ? -hh : -d.h;
+  return { x0, y0, x1: x0 + w, y1: y0 + hh };
+}
+function hitText(x, y) {
+  const u = toUnit(x, y), pad = 8 / view.s;
+  let best = null, bd = Infinity;
+  for (const e of allTextDisp()) {
+    const d = e.d, b = textBox(d), c = Math.cos(d.rot), s = Math.sin(d.rot);
+    const px = u.x - d.x, py = u.y - d.y, lx = c * px - s * py, ly = s * px + c * py;
+    if (lx < b.x0 - pad || lx > b.x1 + pad || ly < b.y0 - pad || ly > b.y1 + pad) continue;
+    const cd = Math.hypot(lx - (b.x0 + b.x1) / 2, ly - (b.y0 + b.y1) / 2);
+    if (cd < bd) { bd = cd; best = e; }
+  }
+  return best;
+}
+function drawAddedTexts(ctx, v, dpr, W, H) {
+  const list = (P.eq && P.eq.texts && P.eq.texts.added) || [];
+  if (!list.length) return;
+  ctx.save();
+  ctx.setTransform(dpr * v.s, 0, 0, dpr * v.s, dpr * v.tx, dpr * v.ty);
+  for (const a of list) { const d = addedDisp(a); drawText(ctx, d, v, W, H, aci(doc.r.layers[d.l] ? doc.r.layers[d.l].color : 7), 0, 0); }
+  ctx.restore();
+}
+function drawTextSel(ctx, v, dpr) {
+  const e = allTextDisp().find(q => q.key === txtSel);
+  if (!e) return;
+  const d = e.d, b = textBox(d), c = Math.cos(-d.rot), s = Math.sin(-d.rot), pad = 4 / v.s;
+  const P4 = [[b.x0 - pad, b.y0 - pad], [b.x1 + pad, b.y0 - pad], [b.x1 + pad, b.y1 + pad], [b.x0 - pad, b.y1 + pad]]
+    .map(([lx, ly]) => [(d.x + c * lx - s * ly) * v.s + v.tx, (d.y + s * lx + c * ly) * v.s + v.ty]);
+  ctx.save(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 1.5; ctx.setLineDash([5, 3]);
+  ctx.beginPath(); P4.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.closePath(); ctx.stroke();
+  ctx.restore();
+}
+function txtAnchor() {
+  const e = allTextDisp().find(q => q.key === txtSel);
+  if (!e) return null;
+  return { x: e.d.x * view.s + view.tx, y: e.d.y * view.s + view.ty, r: Math.max(16, e.d.h * view.s) };
+}
+function setTextTool(on) {
+  if (on) { if (eqTool === 'run') setRunTool(false); setArm(null); eqSel = null; runSel = null; }
+  eqTool = on ? 'text' : 'sel';
+  txtSel = null;
+  $('#txtBtn').classList.toggle('on', on);
+  if (on) setBanner('Tekst: trykk = endre · hold og dra = flytt · tomt sted = ny tekst', 'Ferdig', () => setTextTool(false));
+  else setBanner(null);
+  updateEqBar(); req();
+}
+$('#txtBtn').onclick = () => setTextTool(eqTool !== 'text');
+function textTap(x, y, g) {
+  if (g.ht) { txtSel = g.ht.key; updateEqBar(); req(); return; }
+  if (txtSel) { txtSel = null; updateEqBar(); req(); return; }
+  newTextAt(toUnit(x, y));
+}
+function startTextDrag(e) {
+  if (!gest || gest.type !== 'pending') return;
+  pushUndo();
+  gest.type = 'tdrag'; gest.txt = e; gest.u0 = toUnit(gest.x0, gest.y0);
+  if (e.added) gest.o0 = { x: e.added.x, y: e.added.y };
+  else { const ed = txtStore().edits[e.key] || {}; gest.o0 = { x: ed.dx || 0, y: ed.dy || 0 }; }
+  txtSel = e.key; updateEqBar();
+  try { navigator.vibrate && navigator.vibrate(15); } catch (er) { }
+  req();
+}
+function moveText(p) {
+  const u = toUnit(p.x, p.y), dx = u.x - gest.u0.x, dy = u.y - gest.u0.y, e = gest.txt;
+  if (e.added) { e.added.x = gest.o0.x + dx; e.added.y = gest.o0.y + dy; }
+  else { const st = txtStore(), ed = st.edits[e.key] || (st.edits[e.key] = {}); ed.dx = gest.o0.x + dx; ed.dy = gest.o0.y + dy; }
+  req();
+}
+function endTextDrag() { gest.type = 'end'; save(); updateEqBar(); req(); }
+function textAction(a) {
+  const e = allTextDisp().find(q => q.key === txtSel);
+  if (!e) return;
+  const st = txtStore();
+  if (a === 'tedit') return editTextDlg(e);
+  pushUndo();
+  if (a === 'tdel') {
+    if (e.added) st.added = st.added.filter(q => q !== e.added);
+    else st.edits[e.key] = Object.assign(st.edits[e.key] || {}, { del: true });
+    txtSel = null;
+  } else if (a === 'treset') delete st.edits[e.key];
+  save(); updateEqBar(); req();
+}
+function editTextDlg(e) {
+  if (e.item && e.base === e.item.numLabel) { toast('Tallet styres av antall uttak – trykk på stikkontakten for å endre'); return; }
+  dialog(`<h2>Endre tekst</h2><input id="tIn" value="${esc(e.d.s)}" autocomplete="off">
+    <div class="btns"><button data-x>Avbryt</button><button class="primary" data-ok>OK</button></div>`, (el, close) => {
+    const inp = $('#tIn', el); setTimeout(() => { inp.focus(); inp.select(); }, 60);
+    const ok = () => {
+      const v = inp.value;
+      if (!v.trim()) return;
+      pushUndo();
+      if (e.added) e.added.s = v;
+      else { const st = txtStore(); st.edits[e.key] = Object.assign(st.edits[e.key] || {}, { s: v }); }
+      close(); save(); updateEqBar(); req();
+    };
+    $('[data-ok]', el).onclick = ok; inp.onkeydown = ev => { if (ev.key === 'Enter') ok(); };
+    $('[data-x]', el).onclick = close;
+  });
+}
+function newTextAt(u) {
+  const L = doc.r.layers;
+  const tl = L.find(l => /tekst|text/i.test(l.name) && /^e/i.test(l.name)) || L.find((l, i) => doc.equip[i]) || { name: '0' };
+  const hs = doc.texts.filter(t => t.item).map(t => t.h).sort((a, b) => a - b);
+  const h = hs.length ? hs[Math.floor(hs.length / 2)] : 100 / (P.mmPerUnit || 1);
+  dialog(`<h2>Ny tekst</h2><input id="tIn" autocomplete="off" placeholder="Tekst">
+    <div class="btns"><button data-x>Avbryt</button><button class="primary" data-ok>Legg til</button></div>`, (el, close) => {
+    const inp = $('#tIn', el); setTimeout(() => inp.focus(), 60);
+    const ok = () => {
+      const v = inp.value.trim();
+      if (!v) return;
+      pushUndo();
+      const a = { id: uid(), x: u.x, y: u.y, h, s: v, layer: tl.name };
+      txtStore().added.push(a);
+      txtSel = 'n' + a.id;
+      close(); save(); updateEqBar(); req();
+    };
+    $('[data-ok]', el).onclick = ok; inp.onkeydown = ev => { if (ev.key === 'Enter') ok(); };
+    $('[data-x]', el).onclick = close;
+  });
+}
+
 /* ---------- Føringer (buet strek = skjult anlegg) ---------- */
 function itemByKey(k) { return allItems().find(i => i.key === k && !i.del); }
 function itemRad(it) { const g = doc.geom(it.block); return g ? g.rad * Math.abs(it.sx) * 0.85 : 0; }
@@ -777,6 +941,7 @@ function runBanner() {
   setBanner(runStart ? 'Trykk på neste punkt – eller i tomt område for å avslutte' : 'Føring: trykk på første punkt', 'Ferdig', () => setRunTool(false));
 }
 function setRunTool(on) {
+  if (on && eqTool === 'text') setTextTool(false);
   eqTool = on ? 'run' : 'sel';
   runStart = null;
   $('#runBtn').classList.toggle('on', on);
@@ -821,6 +986,7 @@ function buildPalette() {
 }
 function setArm(name) {
   if (name && eqTool === 'run') setRunTool(false);
+  if (name && eqTool === 'text') setTextTool(false);
   eqArm = name;
   document.querySelectorAll('#pal .pchip').forEach(b => b.classList.toggle('on', b.dataset.b === name));
   if (name) setBanner(`Trykk på tegningen for å sette inn «${prettyBlock(name)}»`, 'Ferdig', () => setArm(null));
@@ -888,7 +1054,7 @@ function setEdMode(m) {
   edMode = m;
   document.querySelectorAll('#modeSeg button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
   $('#tools').classList.toggle('eq', m === 'utstyr');
-  setArm(null); if (eqTool === 'run') setRunTool(false);
+  setArm(null); if (eqTool === 'run') setRunTool(false); if (eqTool === 'text') setTextTool(false);
   eqSel = null; runSel = null; select(null); updateEqBar(); updateTitle(); req();
 }
 document.querySelectorAll('#modeSeg button').forEach(b => b.onclick = () => setEdMode(b.dataset.m));
@@ -905,13 +1071,30 @@ function eqChanges() {
   for (const it of EQ.items) {
     if (it.added) continue;
     if (it.del) { deleted.add(it.idx); it.labels.forEach(t => textDeletes.add(t.rec)); continue; }
-    if (isMoved(it)) {
-      moved.set(it.idx, { x: it.x, y: it.y, r: it.r });
-      it.labels.forEach(t => textMoves.set(t.rec, { ox: it.ox, oy: it.oy, nx: it.x, ny: it.y, dr: it.r - it.or }));
+    if (isMoved(it)) moved.set(it.idx, { x: it.x, y: it.y, r: it.r });
+  }
+  const textEdits = new Map();
+  // tekster ved symbolene: følger symbolet + egen flytting/endring/sletting
+  for (const it of EQ.items) {
+    if (it.added || it.del) continue;
+    for (const t of it.labels) {
+      const e = txtEd(tKey(t)) || {};
+      if (e.del) { textDeletes.add(t.rec); continue; }
+      if (isMoved(it) || e.dx || e.dy) textMoves.set(t.rec, { ox: it.ox, oy: it.oy, nx: it.x + (e.dx || 0), ny: it.y + (e.dy || 0), dr: it.r - it.or });
+      if (e.s != null && t !== it.numLabel) textEdits.set(t.rec, e.s);
     }
   }
+  // øvrige tekster i tegningen
+  for (const t of doc.texts) {
+    if (t.item || !t.rec) continue;
+    const e = txtEd(tKey(t));
+    if (!e) continue;
+    if (e.del) { textDeletes.add(t.rec); continue; }
+    if (e.dx || e.dy) textMoves.set(t.rec, { ox: 0, oy: 0, nx: e.dx || 0, ny: e.dy || 0, dr: 0 });
+    if (e.s != null) textEdits.set(t.rec, e.s);
+  }
   const added = P.eq.added.map(a => ({ ...a }));
-  const textEdits = new Map(), addedTexts = [], addedRaw = [];
+  const addedTexts = [], addedRaw = [];
   for (const it of EQ.items) {
     if (it.del) continue;
     const N = EQ.num[it.block];
@@ -943,6 +1126,10 @@ function eqChanges() {
     if (d) newBlocks.push({ name: d.name, ents: d.ents.map(libPairs) });
   }
   addedRaw.push(...kursExport(layer));
+  for (const a of txtStore().added) {
+    const lines = a.s.split('\n'), ls = 1.66 * a.h;
+    lines.forEach((ln, i) => addedRaw.push({ type: 'TEXT', pairs: [[100, 'AcDbEntity'], [8, a.layer], [100, 'AcDbText'], [10, f(a.x)], [20, f(-(a.y + i * ls))], [30, '0'], [40, f(a.h)], [1, ln], [100, 'AcDbText']] }));
+  }
   return { moved, deleted, added, textMoves, textDeletes, textEdits, addedTexts, addedRaw, newBlocks };
 }
 async function exportDxf() {

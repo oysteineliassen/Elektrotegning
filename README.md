@@ -27,3 +27,4 @@ DWG: lagre som DXF i AutoCAD LT først.
 - **Kursnummer**: trykk på første punkt etter tavla → «Kurs» → skriv nummer (f.eks. 3 → «-F3»). Fordeling kan legges til ved flere tavler (=433.11). Sirkelen peker mot tavla, hold inne og dra for å flytte den. Følger med i DXF og PDF.
 - **PC**: på stor skjerm ligger verktøyene i et sidepanel. Med mus drar du symboler direkte (ikke langtrykk). Snarveier: Del = slett, Ctrl+Z = angre, R = roter, F = tilpass, +/- = zoom, Esc = avbryt.
 - **Synk**: ☁ på startsiden. Prosjektene lagres i et privat GitHub-repo (fine-grained token med Contents: Read and write, bare for det repoet). Synker automatisk ved endringer og når appen åpnes. Ved konflikt vinner nyeste endring.
+- **Tekst** (T i Utstyr): trykk på en tekst for å endre eller slette den, hold inne og dra for å flytte (med mus: bare dra). Trykk på et tomt sted for ny tekst. Gjelder både romnavn, merknader og tekstene ved symbolene. Følger med i DXF og PDF.

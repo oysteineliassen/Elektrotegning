@@ -230,7 +230,8 @@ class DxfDoc {
     const W = ctx.canvas.width / dpr, H = ctx.canvas.height / dpr;
     for (const t of this.texts) {
       if (!this.show[t.l] || t.item) continue;
-      drawText(ctx, t, v, W, H, aci(L[t.l].color === 7 ? 8 : L[t.l].color), 0, 0);
+      const d = typeof staticDisp === 'function' && P && P.eq ? staticDisp(t) : t;
+      if (d) drawText(ctx, d, v, W, H, aci(L[t.l].color === 7 ? 8 : L[t.l].color), 0, 0);
     }
     if (typeof drawEquip === 'function') drawEquip(ctx, v, dpr, o, W, H);
   }
@@ -625,9 +626,11 @@ cv.addEventListener('pointerdown', e => {
   const p = pos(e);
   ptrs.set(e.pointerId, p);
   if (ptrs.size === 1 && eqActive() && mode === 'edit') {
+    const ht = eqTool === 'text' ? hitText(p.x, p.y) : null;
     const hk = eqTool === 'sel' ? hitKurs(p.x, p.y) : null;
-    const hi = hk ? null : hitItem(p.x, p.y);
-    gest = { type: 'pending', x0: p.x, y0: p.y, hi, hk, v0: { ...view } };
+    const hi = hk || eqTool === 'text' ? null : hitItem(p.x, p.y);
+    gest = { type: 'pending', x0: p.x, y0: p.y, hi, hk, ht, v0: { ...view } };
+    if (ht) lpTimer = setTimeout(() => startTextDrag(ht), 380);
     if (hk) lpTimer = setTimeout(() => { if (gest && gest.type === 'pending') { gest.type = 'kdrag'; try { navigator.vibrate && navigator.vibrate(15); } catch (e) { } } }, 380);
     else if (hi) lpTimer = setTimeout(() => startItemDrag(hi, p.x, p.y), 380);
   } else if (ptrs.size === 1) {
@@ -658,9 +661,10 @@ cv.addEventListener('pointermove', e => {
     req();
     return;
   }
-  if (gest.type === 'pending' && e.pointerType === 'mouse' && Math.hypot(p.x - gest.x0, p.y - gest.y0) > 4 && (gest.hp || gest.hi || gest.hk)) {
+  if (gest.type === 'pending' && e.pointerType === 'mouse' && Math.hypot(p.x - gest.x0, p.y - gest.y0) > 4 && (gest.hp || gest.hi || gest.hk || gest.ht)) {
     clearTimeout(lpTimer);
-    if (gest.hk) gest.type = 'kdrag';
+    if (gest.ht) startTextDrag(gest.ht);
+    else if (gest.hk) gest.type = 'kdrag';
     else if (gest.hi) startItemDrag(gest.hi, gest.x0, gest.y0);
     else startDrag(gest.hp, gest.x0, gest.y0);
   }
@@ -673,6 +677,8 @@ cv.addEventListener('pointermove', e => {
     req();
   } else if (gest.type === 'kdrag') {
     moveKurs(gest.hk, p);
+  } else if (gest.type === 'tdrag') {
+    moveText(p);
   } else if (gest.type === 'idrag') {
     moveItemDrag(p);
   } else if (gest.type === 'drag') {
@@ -692,6 +698,7 @@ function ptrEnd(e) {
   else if (gest.type === 'drag') endDrag();
   else if (gest.type === 'idrag') endItemDrag();
   else if (gest.type === 'kdrag') save();
+  else if (gest.type === 'tdrag') endTextDrag();
   else if (gest.type === 'pinch' && ptrs.size === 1) {
     const [p] = [...ptrs.values()];
     gest = { type: 'pan', x0: p.x, y0: p.y, v0: { ...view } };
@@ -1464,7 +1471,7 @@ cv.addEventListener('pointermove', e => {
   if (e.pointerType !== 'mouse' || ptrs.size || !doc || !P) return;
   const p = pos(e);
   let hit = false;
-  if (typeof eqActive === 'function' && eqActive()) hit = !!(hitKurs(p.x, p.y) || hitItem(p.x, p.y) || hitRun(p.x, p.y));
+  if (typeof eqActive === 'function' && eqActive()) hit = eqTool === 'text' ? !!hitText(p.x, p.y) : !!(hitKurs(p.x, p.y) || hitItem(p.x, p.y) || hitRun(p.x, p.y));
   else hit = !!(hitPoint(p.x, p.y) || hitLabel(p.x, p.y));
   cv.style.cursor = hit ? 'pointer' : (mode === 'edit' && !placing && !eqActive() ? 'grab' : 'crosshair');
 });
@@ -1478,13 +1485,16 @@ document.addEventListener('keydown', e => {
     if (mode === 'row') endRow();
     else if (mode === 'calib') $('#bannerBtn').click();
     else if (eq && eqTool === 'run') setRunTool(false);
+    else if (eq && eqTool === 'text' && !txtSel) setTextTool(false);
+    else if (eq && txtSel) { txtSel = null; updateEqBar(); req(); }
     else if (eq && eqArm) setArm(null);
     else { select(null); if (eq) { eqSel = null; runSel = null; updateEqBar(); req(); } }
     return;
   }
   if (k === 'Delete' || k === 'Backspace') {
     e.preventDefault();
-    if (eq && eqSel) eqAction('del');
+    if (eq && txtSel) textAction('tdel');
+    else if (eq && eqSel) eqAction('del');
     else if (eq && runSel) runAction('rdel');
     else if (!eq && selId) $('#selDel').click();
     return;

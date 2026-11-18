@@ -158,8 +158,10 @@
   #modeSeg.on { display: flex; }
   #modeSeg button { flex: 1; padding: 7px; border-radius: 999px; font-size: 14px; }
   #modeSeg button.on { background: #fff; color: #111; border-color: #fff; font-weight: 600; }
-  #pal, #chgBtn, #runBtn { display: none; }
-  #tools.eq #runBtn { display: block; }
+  #pal, #chgBtn, #runBtn, #txtBtn { display: none; }
+  #tools.eq #runBtn, #tools.eq #txtBtn { display: block; }
+  #txtBtn { flex: none; width: 42px; height: 40px; padding: 0; border-radius: 999px; font-size: 18px; font-weight: 700; font-family: Georgia, serif; }
+  #txtBtn.on { background: #2563eb; border-color: #2563eb; color: #fff; }
   #runBtn { flex: none; width: 42px; height: 40px; padding: 0; border-radius: 999px; font-size: 20px; }
   #runBtn.on { background: #dc2626; border-color: #dc2626; color: #fff; }
   #npick { position: absolute; display: none; gap: 4px; padding: 5px; background: #111827; border-radius: 999px; box-shadow: 0 6px 20px rgba(0,0,0,.35); z-index: 4; }
@@ -241,6 +243,7 @@
     <button id="rowBtn" aria-label="Lag rad">⋯ Rad</button>
     <div id="pal"></div>
     <button id="runBtn" aria-label="Tegn føring" data-label="Føring">〰</button>
+    <button id="txtBtn" aria-label="Tekst" data-label="Tekst">T</button>
     <button id="chgBtn" class="on" aria-label="Vis endringer" data-label="Vis endringer">👁</button>
     <button id="undoBtn" aria-label="Angre" data-label="Angre">↶</button>
   </div>

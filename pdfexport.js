@@ -212,10 +212,12 @@ function pdfContent(L) {
   for (let k = 0; k < sg.n; k++) { if (!doc.show[sg.l[k]] || isEq(k)) continue; byL[sg.l[k]].push([sg.x1[k], sg.y1[k], sg.x2[k], sg.y2[k]]); }
   byL.forEach((segs, i) => { if (!segs.length) return; pen.stroke(doc.wall[i] ? '#000000' : aci(Ls[i].color), doc.wall[i] ? 0.5 : 0.25); pen.lines(segs); });
   // tekst
-  for (const t of doc.texts) {
-    if (!doc.show[t.l] || t.item) continue;
+  for (const t0 of doc.texts) {
+    if (!doc.show[t0.l] || t0.item) continue;
+    const t = staticDisp(t0); if (!t) continue;
     pen.text(aci(Ls[t.l].color === 7 ? 8 : Ls[t.l].color), t.x, t.y, t.h, t.rot, t.s, t.ha, t.va);
   }
+  for (const a of ((P.eq && P.eq.texts && P.eq.texts.added) || [])) { const d = addedDisp(a); pen.text(aci(Ls[d.l] ? Ls[d.l].color : 7), d.x, d.y, d.h, 0, d.s, d.ha, d.va); }
   // føringer
   const runs = (P.eq && P.eq.runs) || [];
   if (runs.length) {
@@ -234,12 +236,7 @@ function pdfContent(L) {
     for (let k = 0; k < g.pts.length; k += 4) { const a = T(g.pts[k], g.pts[k + 1]), b = T(g.pts[k + 2], g.pts[k + 3]); segs.push([a[0], a[1], b[0], b[1]]); }
     pen.stroke(col, 0.35); pen.lines(segs);
     for (const t of g.texts) { const p = T(t.x, t.y); pen.text(col, p[0], p[1], t.h * Math.abs(it.sx), t.rot - it.r, t.s, t.ha, t.va); }
-    const dr = it.r - it.or, c = Math.cos(dr), sn = Math.sin(dr);
-    for (let t of it.labels) {
-      if (t === it.numLabel) { if (it.n < 2) continue; if (it.n !== it.n0) t = { ...t, s: String(it.n) }; }
-      const ax = t.x - it.ox, ay = t.y - it.oy;
-      pen.text(col, it.x + c * ax - sn * ay, it.y + sn * ax + c * ay, t.h, t.rot, t.s, t.ha, t.va);
-    }
+    for (const t0 of it.labels) { const t = labelDisp(it, t0); if (t) pen.text(col, t.x, t.y, t.h, t.rot, t.s, t.ha, t.va); }
     if (!it.numLabel && it.n >= 2 && EQ.num && EQ.num[it.block]) {
       const q = numPos(it), t = EQ.num[it.block].t;
       pen.text(col, q.x, q.y, t.h, t.rot, String(it.n), t.ha, t.va);
