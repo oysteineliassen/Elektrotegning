@@ -185,6 +185,7 @@ function placeItem(it, ux, uy) {
   if (!w) { it.x = ux; it.y = uy; it.snap = -1; return; }
   it.x = w.px + w.nx * info.off; it.y = w.py + w.ny * info.off;
   it.r = Math.atan2(-w.ny, -w.nx) - info.local;
+  it._wn = { px: w.px, py: w.py, nx: w.nx, ny: w.ny };
   if (it.snap !== w.k && it.snap !== undefined) { try { navigator.vibrate && navigator.vibrate(8); } catch (e) { } }
   it.snap = w.k;
 }
@@ -334,6 +335,7 @@ function eqTap(x, y, g) {
     if (hr) { runSel = hr.id; eqSel = null; updateEqBar(); req(); return; }
     runStart = null; runSel = null; runBanner(); updateEqBar(); req(); return;
   }
+  if (eqArm) { runSel = null; addItem(eqArm, toUnit(x, y)); req(); return; }
   if (g.hi) { runSel = null; if (g.mod) eqSelect(g.hi.key, true); else eqSelect(eqSel === g.hi.key && !eqSet.size ? null : g.hi.key); return; }
   const hr = hitRun(x, y);
   if (hr && !eqArm) { runSel = hr.id; eqSel = null; updateEqBar(); req(); return; }
@@ -363,7 +365,7 @@ function addItem(block, u) {
   it.ox = it.x; it.oy = it.y; it.or = it.r;
   EQ.items.push(it);
   P.eq.added.push({ id, block, layer, x: it.x, y: it.y, r: it.r, sx: it.sx, sy: it.sy, tmpl: it.tmpl, n: it.n });
-  eqSelect(it.key);
+  if (!eqArm) eqSelect(it.key);
   save();
   return it;
 }
@@ -446,13 +448,15 @@ function startItemDrag(it, x, y) {
 }
 function moveItemDrag(p) {
   const it = gest.item, u = toUnit(p.x + gest.off.x, p.y + gest.off.y);
-  // slipp oppå et annet veggsymbol = stable
+  // slipp oppå et annet veggsymbol = stable. Måles fra der symbolet vil havne (ikke fingeren),
+  // med lav terskel og litt slakk når stabling allerede vises, så det ikke stables ved et uhell.
   let target = null;
   if (infoOf(it.block).wall) {
-    let bd = 28;
+    const sx = p.x + gest.off.x, sy = p.y + gest.off.y;
+    let bd = gest.stackTo ? STACK_KEEP : STACK_PX;
     for (const q of EQ.items) {
       if (q === it || q.del || gest.chain.has(q.key) || !infoOf(q.block).wall || !doc.show[q.li]) continue;
-      const c = itemCenter(q), d = Math.hypot(c.x * view.s + view.tx - p.x, c.y * view.s + view.ty - p.y);
+      const c = { x: q.x * view.s + view.tx, y: q.y * view.s + view.ty }, d = Math.hypot(c.x - sx, c.y - sy);
       if (d < bd) { bd = d; target = q; }
     }
   }
@@ -498,45 +502,100 @@ function endItemDrag() {
   gest.type = 'end';
   delete it.snap;
   if (it.added) { it.ox = it.x; it.oy = it.y; it.or = it.r; }
-  if (gest.stackTo) toast('Stablet');
+  if (gest.stackTo) toast('Stablet på ' + cap(prettyBlock(gest.stackTo.block)));
+  gest.stackTo = null;
   commitAll(); save(); updateEqBar(); updateTitle(); req();
 }
 
 /* ---------- Handlingslinje for valgt symbol / føring ---------- */
+const ICP = {
+  photo: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
+  note: '<path d="M4 5h16v11H9l-5 4z"/>',
+  rot: '<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>',
+  flip: '<path d="M4 12h16M8 8l-4 4l4 4M16 8l4 4l-4 4"/>',
+  swap: '<path d="M8 4v16M4 16l4 4l4-4M16 20V4M12 8l4-4l4 4"/>',
+  dup: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/>',
+  reset: '<path d="M4 4v6h6"/><path d="M4.5 15a8 8 0 1 0 1.9-8.3L4 10"/>',
+  del: '<path d="M4 7h16M10 11v6M14 11v6M5 7l1 13h12l1-13M9 7V4h6v3"/>',
+  x: '<path d="M6 6l12 12M18 6L6 18"/>',
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/>',
+  multi: '<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/><path d="M13 7h4v4M7 13v4h4"/>',
+  bend: '<path d="M4 18C6 8 18 8 20 18"/>',
+  move: '<path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/>'
+};
+function ic(n) { return `<svg class="ic" viewBox="0 0 24 24">${ICP[n] || ''}</svg>`; }
+function abtn(a, icon, label, cls) { return `<button data-a="${a}" class="${cls || ''}">${icon && icon[0] === '<' ? icon : ic(icon)}<span>${label}</span></button>`; }
+function eqDragging() { return gest && (gest.type === 'idrag' || gest.type === 'tdrag' || gest.type === 'gdrag'); }
+function setEqSheet(on) {
+  const bar = $('#eqbar'), was = bar.classList.contains('on');
+  if (was === on) return;
+  bar.classList.toggle('on', on);
+  $('#ed').classList.toggle('eqsel', on);
+  if (!on) bar.dataset.k = '';
+  requestAnimationFrame(() => { resize(); if (on) ensureSelVisible(); });
+}
+function ensureSelVisible() {
+  const a = selAnchor();
+  if (!a) return;
+  const m = Math.min(60, ch * 0.15);
+  let dx = 0, dy = 0;
+  if (a.y - a.r < m || (a.yb != null ? a.yb : a.y) + a.r > ch - m) dy = ch * 0.42 - a.y;
+  if (a.x < m || a.x > cw - m) dx = cw / 2 - a.x;
+  if (dx || dy) { view.tx += dx; view.ty += dy; afterView(); }
+}
 function updateEqBar() {
   const bar = $('#eqbar');
-  $('#npick').classList.remove('on');
+  if (eqDragging()) return;
   const run = runSel && (P.eq.runs || []).find(r => r.id === runSel);
   const it = !run && eqSel && itemByKey(eqSel);
   const te = eqTool === 'text' && txtSel && allTextDisp().find(q => q.key === txtSel);
-  if (eqSet.size > 1 && eqTool === 'sel' && eqActive() && !(gest && gest.type === 'gdrag')) {
-    const html = `<b>${eqSet.size} symboler</b><button data-a="gdel" title="Slett alle">🗑</button><button data-a="gnone" title="Fjern valg">✕</button>`;
-    if (bar.dataset.k !== html) { bar.innerHTML = html; bar.dataset.k = html; bar.querySelectorAll('[data-a]').forEach(b => b.onclick = () => eqAction(b.dataset.a)); }
-    bar.classList.add('on'); positionEqBar(); return;
-  }
-  if (!eqActive() || (!te && !run && (!it || it.del)) || (gest && (gest.type === 'idrag' || gest.type === 'tdrag'))) { bar.classList.remove('on'); bar.dataset.k = ''; return; }
-  let html;
-  const kb = it ? `<button class="num" data-a="kurs" title="Kursnummer (første boks etter tavla)">${kursOf(it.key) ? esc(kursText(kursOf(it.key)).replace('\n', '')) : 'Kurs'}</button>` : '';
-  if (te) {
+  let title = '', sub = '', acts = '', hint = '';
+  if (eqSet.size > 1 && eqTool === 'sel' && eqActive()) {
+    title = `${eqSet.size} symboler valgt`;
+    hint = 'Dra ett av dem for å flytte alle samlet.';
+    acts = abtn('gdel', 'del', 'Slett alle', 'dz') + abtn('gnone', 'x', 'Fjern valg');
+  } else if (!eqActive() || (!te && !run && (!it || it.del))) {
+    $('#npick').classList.remove('on');
+    setEqSheet(false); return;
+  } else if (te) {
     const sel = selTexts(), n = sel.length;
-    html = `<b>${n > 1 ? n + ' tekster' : 'Tekst'}</b>` + (n === 1 ? `<button data-a="tedit" title="Endre tekst">✎</button>` : '')
-      + (sel.some(q => (q.note ? notesMap()[q.note.key].lx != null : !q.added && txtEd(q.key))) ? `<button data-a="treset" title="Tilbake til original">↺</button>` : '')
-      + `<button data-a="tmulti" title="Velg flere" style="${txtMulti ? 'background:#2563eb' : ''}">⊞</button><button data-a="tdel" title="Slett">🗑</button>`;
+    title = n > 1 ? n + ' tekster valgt' : 'Tekst';
+    sub = n === 1 ? (te.text || '').replace(/\n/g, ' ').slice(0, 60) : '';
+    acts = (n === 1 ? abtn('tedit', 'edit', 'Endre') : '')
+      + (sel.some(q => (q.note ? notesMap()[q.note.key].lx != null : !q.added && txtEd(q.key))) ? abtn('treset', 'reset', 'Original') : '')
+      + abtn('tmulti', 'multi', 'Velg flere', txtMulti ? 'on' : '') + abtn('tdel', 'del', 'Slett', 'dz');
+  } else if (run) {
+    title = 'Føring'; sub = 'Skjult anlegg';
+    acts = abtn('rflip', 'flip', 'Bøy motsatt') + abtn('rbend', 'bend', 'Mer/mindre bue') + abtn('rdel', 'del', 'Slett', 'dz');
+  } else {
+    const k = kursOf(it.key), kt = k ? kursText(k).replace('\n', ' ') : '';
+    const room = typeof roomOf === 'function' ? roomOf(it) : '';
+    const nph = typeof photosOf === 'function' ? photosOf(it.key).length : 0;
+    const kb = abtn('kurs', `<b>${k ? esc(kursText(k).split('\n').pop()) : '-F'}</b>`, k ? 'Kurs' : 'Kursmerke', k ? 'on' : '');
+    const pb = abtn('photo', 'photo', nph ? `Bilder (${nph})` : 'Bilde');
+    const nb = abtn('note', 'note', notesMap()[it.key] ? 'Endre notat' : 'Kommentar');
+    if (it.isPt) {
+      title = (TYPES[it.pt.type] || TYPES.downlight).name;
+      sub = [room, kt, 'takpunkt'].filter(Boolean).join(' · ');
+      acts = pb + nb + kb + abtn('del', 'del', 'Slett', 'dz');
+    } else {
+      title = cap(prettyBlock(it.block)) + (countable(it.block) ? `, ${it.n} uttak` : '');
+      sub = [room, kt, it.added ? 'lagt til' : isMoved(it) ? 'flyttet' : 'som prosjektert', inStack(it) ? 'i stabel' : ''].filter(Boolean).join(' · ');
+      acts = pb + nb
+        + (countable(it.block) ? abtn('n', `<b>${it.n}×</b>`, 'Uttak') : '') + kb
+        + (inStack(it) ? abtn('swap', 'swap', 'Bytt i stabel') : abtn('rot', 'rot', 'Roter') + abtn('flip', 'flip', 'Snu'))
+        + abtn('dup', 'dup', 'Kopier')
+        + (isMoved(it) ? abtn('reset', 'reset', 'Prosjektert') : '')
+        + abtn('del', 'del', 'Slett', 'dz');
+    }
   }
-  else if (it && it.isPt) html = `<b>${esc((TYPES[it.pt.type] || TYPES.downlight).name)}</b>${kb}<button data-a="note" title="Kommentar">💬</button><button data-a="photo" title="Bilder">📷</button><button data-a="del" title="Slett">🗑</button>`;
-  else if (run) html = `<b>Føring</b><button data-a="rflip" title="Bøy andre veien">⇅</button><button data-a="rbend" title="Mer/mindre bue">⌒</button><button data-a="rdel" title="Slett">🗑</button>`;
-  else html = `<b>${esc(prettyBlock(it.block))}${it.added ? ' · ny' : isMoved(it) ? ' · flyttet' : ''}</b>`
-    + (countable(it.block) ? `<button class="num" data-a="n" title="Antall uttak">${it.n}×</button>` : '') + kb
-    + (inStack(it) ? `<button data-a="swap" title="Bytt plass i stabelen">⇵</button>` : `<button data-a="rot" title="Roter 90°">⟳</button><button data-a="flip" title="Snu til andre siden av veggen">⇅</button>`)
-    + `<button data-a="note" title="Kommentar">💬</button><button data-a="photo" title="Bilder">📷</button><button data-a="dup" title="Kopier">⧉</button>`
-    + (isMoved(it) ? `<button data-a="reset" title="Tilbake til prosjektert">↺</button>` : '')
-    + `<button data-a="del" title="Slett">🗑</button>`;
+  const html = `<div class="hd"><div class="tt"><b>${esc(title)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</div><button class="ib" data-a="close" aria-label="Lukk">${ic('x')}</button></div>`
+    + (hint ? `<p class="hint">${hint}</p>` : '') + `<div class="acts">${acts}</div>`;
   if (bar.dataset.k !== html) {
     bar.innerHTML = html; bar.dataset.k = html;
     bar.querySelectorAll('[data-a]').forEach(b => b.onclick = () => eqAction(b.dataset.a));
   }
-  bar.classList.add('on');
-  positionEqBar();
+  setEqSheet(true);
 }
 function selAnchor() {
   if (eqSet.size > 1 && eqTool === 'sel') {
@@ -552,23 +611,7 @@ function selAnchor() {
   const g = doc.geom(it.block), c = itemCenter(it);
   return { x: c.x * view.s + view.tx, y: c.y * view.s + view.ty, r: Math.max(22, (g ? g.rad * Math.abs(it.sx) : 0) * view.s + 10) };
 }
-function positionEqBar() {
-  const bar = $('#eqbar');
-  if (!bar.classList.contains('on')) return;
-  const a = selAnchor();
-  if (!a) return;
-  const bw = bar.offsetWidth, bh = bar.offsetHeight;
-  let top = a.y - a.r - bh - 10;
-  if (top < 8) top = (a.yb != null ? a.yb : a.y) + a.r + 10;
-  bar.style.left = clamp(a.x - bw / 2, 8, cw - bw - 8) + 'px';
-  bar.style.top = clamp(top, 8, ch - bh - 8) + 'px';
-  const np = $('#npick');
-  if (np.classList.contains('on')) {
-    const below = top < a.y;
-    np.style.left = clamp(a.x - np.offsetWidth / 2, 8, cw - np.offsetWidth - 8) + 'px';
-    np.style.top = clamp(below ? top - np.offsetHeight - 6 : top + bh + 6, 8, ch - np.offsetHeight - 8) + 'px';
-  }
-}
+function positionEqBar() { }
 function openNPick(it) {
   const np = $('#npick');
   np.innerHTML = [1, 2, 3, 4, 5, 6].map(n => `<button data-n="${n}" class="${n === it.n ? 'on' : ''}">${n}</button>`).join('');
@@ -577,9 +620,9 @@ function openNPick(it) {
     np.classList.remove('on'); updateEqBar(); updateTitle(); req();
   });
   np.classList.add('on');
-  positionEqBar();
 }
 function eqAction(a) {
+  if (a === 'close') { $('#npick').classList.remove('on'); if (eqTool === 'text') { txtClear(); } eqSet.clear(); eqSel = null; runSel = null; updateEqBar(); req(); return; }
   if (a === 'gdel') return groupDelete();
   if (a === 'gnone') { eqSet.clear(); eqSel = null; updateEqBar(); req(); return; }
   if (a === 'tedit' || a === 'treset' || a === 'tdel' || a === 'tmulti') return textAction(a);
@@ -1130,23 +1173,19 @@ function setRunTool(on) {
 }
 $('#runBtn').onclick = () => setRunTool(eqTool !== 'run');
 function updToolsBtn() {
-  const b = $('#toolsBtn');
-  b.textContent = eqTool === 'run' ? '〰' : eqTool === 'text' ? 'T' : '🛠';
-  b.classList.toggle('on', eqTool !== 'sel');
+  const st = { sel: eqTool === 'sel' && !eqArm, run: eqTool === 'run', txt: eqTool === 'text' };
+  for (const [id, on] of [['selBtn', st.sel], ['runBtn', st.run], ['txtBtn', st.txt]]) {
+    const b = $('#' + id); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+  const c = $('#chgBtn'), con = S.showChg !== false;
+  c.classList.toggle('on', con); c.setAttribute('aria-checked', con ? 'true' : 'false');
+  $('small', c).textContent = con ? 'vises' : 'skjult';
 }
-$('#toolsBtn').onclick = () => {
-  const pop = $('#toolPop');
-  if (pop.classList.contains('on')) { pop.classList.remove('on'); return; }
-  pop.innerHTML = `<button data-t="run" class="${eqTool === 'run' ? 'on' : ''}">〰 Tegn føring</button>
-    <button data-t="text" class="${eqTool === 'text' ? 'on' : ''}">T Tekst</button>
-    <button data-t="chg" class="${S.showChg !== false ? 'on' : ''}">👁 Vis endringer</button>`;
-  pop.querySelectorAll('[data-t]').forEach(x => x.onclick = () => {
-    pop.classList.remove('on');
-    if (x.dataset.t === 'run') $('#runBtn').click();
-    else if (x.dataset.t === 'text') $('#txtBtn').click();
-    else $('#chgBtn').click();
-  });
-  pop.classList.add('on');
+$('#selBtn').onclick = () => {
+  setArm(null);
+  if (eqTool === 'run') setRunTool(false);
+  if (eqTool === 'text') setTextTool(false);
+  updToolsBtn();
 };
 
 /* ---------- Palett ---------- */
@@ -1187,8 +1226,9 @@ function setArm(name) {
   if (name && eqTool === 'text') setTextTool(false);
   eqArm = name;
   document.querySelectorAll('#pal .pchip').forEach(b => b.classList.toggle('on', b.dataset.b === name));
-  if (name) setBanner(`Trykk på tegningen for å sette inn «${prettyBlock(name)}»`, 'Ferdig', () => setArm(null));
+  if (name) { eqSel = null; eqSet.clear(); runSel = null; updateEqBar(); setBanner(`<b>Plasserer: ${esc(cap(prettyBlock(name)))}</b><small>Trykk i tegningen for hvert symbol</small>`, 'Ferdig', () => setArm(null), true); }
   else setBanner(null);
+  updToolsBtn(); req();
 }
 // Dra et symbol opp fra paletten og slipp det på tegningen
 let palDrag = null;
@@ -1235,6 +1275,42 @@ function palPointer(btn, name) {
   btn.addEventListener('pointerup', end);
   btn.addEventListener('pointercancel', end);
 }
+const STACK_PX = 14, STACK_KEEP = 22;
+// Tilbakemelding under dra: vegg symbolet fester seg til, retning, og om slipp vil stable
+function drawDragFx(ctx) {
+  const tag = $('#dragTag');
+  const it = gest && gest.type === 'idrag' && !gest.item.isPt ? gest.item : (palDrag && palDrag.inside ? palDrag : null);
+  if (!it || !doc) { if (tag.classList.contains('on')) tag.classList.remove('on'); return; }
+  const S_ = v => ({ x: v.x * view.s + view.tx, y: v.y * view.s + view.ty });
+  const wall = infoOf(it.block).wall, stackTo = it === palDrag ? null : gest.stackTo;
+  ctx.save();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  let txt, cls = '';
+  if (stackTo) {
+    const c = S_(itemCenter(stackTo)), g = doc.geom(stackTo.block), r = Math.max(18, (g ? g.rad * Math.abs(stackTo.sx) : 0) * view.s + 8);
+    ctx.strokeStyle = '#f97316'; ctx.lineWidth = 3; ctx.setLineDash([6, 4]);
+    ctx.beginPath(); ctx.arc(c.x, c.y, r, 0, Math.PI * 2); ctx.stroke();
+    txt = 'Stables på ' + cap(prettyBlock(stackTo.block)); cls = 'stack';
+  } else if (wall && it.snap >= 0 && it._wn) {
+    const sg = doc.r.segs, k = it.snap;
+    const a = S_({ x: sg.x1[k], y: sg.y1[k] }), b = S_({ x: sg.x2[k], y: sg.y2[k] });
+    ctx.strokeStyle = 'rgba(37,99,235,.55)'; ctx.lineWidth = 9; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    // retning: pil fra veggen og inn i rommet, slik symbolet blir stående
+    const f = S_({ x: it._wn.px, y: it._wn.py }), L = 30, nx = it._wn.nx, ny = it._wn.ny;
+    const e = { x: f.x + nx * L, y: f.y + ny * L };
+    ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(f.x, f.y); ctx.lineTo(e.x, e.y);
+    ctx.moveTo(e.x - nx * 8 - ny * 6, e.y - ny * 8 + nx * 6); ctx.lineTo(e.x, e.y); ctx.lineTo(e.x - nx * 8 + ny * 6, e.y - ny * 8 - nx * 6); ctx.stroke();
+    txt = 'Festes til vegg';
+  } else txt = wall ? 'Ingen vegg i nærheten' : 'Plasseres fritt';
+  ctx.restore();
+  const c = S_(itemCenter(it));
+  if (tag.textContent !== txt) tag.textContent = txt;
+  tag.className = 'on ' + cls;
+  tag.style.left = clamp(c.x - tag.offsetWidth / 2, 6, cw - tag.offsetWidth - 6) + 'px';
+  tag.style.top = clamp(c.y - 70, 6, ch - 40) + 'px';
+}
 function drawPalDrag(ctx) {
   if (!palDrag || !palDrag.inside) return;
   const g = doc.geom(palDrag.block);
@@ -1253,12 +1329,12 @@ function setEdMode(m) {
   document.querySelectorAll('#modeSeg button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
   $('#tools').classList.toggle('eq', m === 'utstyr');
   setArm(null); if (eqTool === 'run') setRunTool(false); if (eqTool === 'text') setTextTool(false);
-  eqSel = null; runSel = null; select(null); updateEqBar(); updateTitle(); req();
+  eqSel = null; runSel = null; eqSet.clear(); select(null); updateEqBar(); updToolsBtn(); updateTitle(); req();
 }
 document.querySelectorAll('#modeSeg button').forEach(b => b.onclick = () => setEdMode(b.dataset.m));
 $('#chgBtn').onclick = () => {
   S.showChg = S.showChg === false; saveS();
-  $('#chgBtn').classList.toggle('on', S.showChg !== false);
+  updToolsBtn();
   toast(S.showChg !== false ? 'Viser endringer mot prosjektert' : 'Skjuler endringer');
   req();
 };

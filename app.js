@@ -411,6 +411,7 @@ function draw() {
   labels = [];
   if (edMode === 'mal' || doc.kind !== 'dxf') drawOverlay(ctx, view, { main: true, k: S.sym });
   if (typeof drawPalDrag === 'function') drawPalDrag(ctx);
+  if (typeof drawDragFx === 'function') drawDragFx(ctx);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (dragPt) drawLoupe(ctx, dragPt, true);
   else if (gest && gest.type === 'idrag') drawLoupe(ctx, gest.item, false);
@@ -880,10 +881,11 @@ function promptDlg(title, label, value, cb) {
 }
 let toastT = 0;
 function toast(t) { const el = $('#toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), 2400); }
-function setBanner(txt, btnTxt, onBtn) {
+function setBanner(txt, btnTxt, onBtn, html) {
   const b = $('#banner');
-  if (!txt) { b.classList.remove('on'); return; }
-  $('#bannerTxt').textContent = txt;
+  if (!txt) { b.classList.remove('on', 'arm'); return; }
+  if (html) $('#bannerTxt').innerHTML = txt; else $('#bannerTxt').textContent = txt;
+  b.classList.toggle('arm', !!html);
   if (btnTxt !== undefined) {
     $('#bannerBtn').textContent = btnTxt;
     $('#bannerBtn').onclick = onBtn;
@@ -1330,10 +1332,13 @@ async function renderHome() {
 function show(id) { document.querySelectorAll('.view').forEach(v => v.classList.toggle('on', v.id === id)); }
 function updateTitle() {
   if (!P) return;
-  const sub = P.kind === 'pdf' ? `PDF · ${P.scaleText ? (P.scaleText === 'kalibrert' ? 'kalibrert' : 'målestokk ' + P.scaleText) : 'mangler målestokk'}` : `DXF · ${P.units}`;
-  let tail = P.points.length ? P.points.length + (P.points.length === 1 ? ' punkt' : ' punkter') : 'trykk for å plassere';
-  if (typeof eqActive === 'function' && eqActive()) { const n = changeCount(); tail = n ? n + ' endringer' : (matchMedia('(pointer: fine)').matches ? 'dra for å flytte' : 'hold inne for å flytte'); }
-  $('#edTitle').innerHTML = `${esc(P.name)}<small>${esc(sub)} · ${esc(tail)}</small>`;
+  const parts = [];
+  const np = P.points.length;
+  if (typeof EQ !== 'undefined' && EQ && EQ.items && doc && doc.kind === 'dxf') parts.push(EQ.items.filter(i => !i.del).length + ' utstyr');
+  parts.push(np + (np === 1 ? ' takpunkt' : ' takpunkter'));
+  if (P.kind === 'pdf' && !P.mmPerUnit) parts.push('ikke kalibrert');
+  if (typeof eqActive === 'function' && eqActive()) { const n = changeCount(); if (n) parts.push(n + (n === 1 ? ' endring' : ' endringer')); }
+  $('#edTitle').innerHTML = `${esc(P.name)}<small>${esc(parts.join(' · '))}</small>`;
 }
 
 async function openProject(p, fresh) {
@@ -1458,7 +1463,7 @@ async function handleFile(f) {
       await store.putFile(p.id, new Blob([buf], { type: 'application/octet-stream' }));
       await store.put(p);
       await openProject(p, true);
-      toast(wallLs.length ? `Vegglag: ${wallLs.map(l => l.name).join(', ')}` : 'Alle lag brukes som vegger – velg vegglag i menyen');
+      toast(wallLs.length ? 'Vegger funnet' : 'Fant ikke vegglag – velg i Lag og vegger');
       return;
     }
     throw new Error('Ukjent filtype: .' + ext);

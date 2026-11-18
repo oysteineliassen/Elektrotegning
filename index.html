@@ -20,6 +20,7 @@
     --safe-t: env(safe-area-inset-top, 0px); --safe-b: env(safe-area-inset-bottom, 0px);
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  [hidden] { display: none !important; }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
     font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overscroll-behavior: none; }
   body { position: fixed; inset: 0; overflow: hidden; }
@@ -67,6 +68,10 @@
     padding: 10px 12px; display: none; gap: 10px; align-items: center; font-size: 14px; }
   #banner.on { display: flex; }
   #banner span { flex: 1; }
+  #banner.arm { background: #f97316; color: #111; }
+  #banner.arm #bannerTxt { display: flex; flex-direction: column; line-height: 1.2; }
+  #banner.arm small { font-size: 12px; font-weight: 500; }
+  #banner.arm button { background: #111827; color: #fff; border-color: #111827; font-weight: 700; }
   #loading { position: absolute; inset: 0; display: none; place-items: center; background: rgba(17,24,39,.6); color: #fff; font-weight: 600; }
   #loading.on { display: grid; }
 
@@ -90,7 +95,6 @@
   .chip canvas { width: 20px; height: 20px; }
   #placeBtn { flex: none; border-radius: 999px; padding: 8px 12px; font-weight: 600; }
   #placeBtn.on { background: var(--accent); border-color: var(--accent); color: #111; }
-  #undoBtn { flex: none; width: 42px; height: 40px; padding: 0; border-radius: 999px; font-size: 18px; }
 
   /* Dialoger */
   #modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; z-index: 20;
@@ -124,7 +128,7 @@
   .setrow > span { flex: 1; }
   .setrow select, .setrow input[type=number] { width: 130px; }
   .setrow input[type=range] { width: 150px; padding: 0; }
-  #toast { position: fixed; left: 50%; bottom: calc(90px + var(--safe-b)); transform: translateX(-50%);
+  #toast { position: fixed; left: 50%; top: calc(118px + var(--safe-t)); transform: translateX(-50%);
     background: #fff; color: #111; padding: 10px 16px; border-radius: 999px; font-weight: 600; font-size: 14px;
     box-shadow: 0 6px 20px rgba(0,0,0,.3); opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 30; max-width: 90vw; text-align: center; }
   #toast.on { opacity: 1; }
@@ -158,7 +162,7 @@
   #modeSeg.on { display: flex; }
   #modeSeg button { flex: 1; padding: 7px; border-radius: 999px; font-size: 14px; }
   #modeSeg button.on { background: #fff; color: #111; border-color: #fff; font-weight: 600; }
-  #pal, #chgBtn, #runBtn, #txtBtn, #toolsBtn { display: none; }
+  #pal, #eqnav, #toolsBtn { display: none; }
   #toolsBtn { flex: none; width: 46px; height: 44px; padding: 0; border-radius: 999px; font-size: 19px; }
   #toolsBtn.on { background: var(--accent); border-color: var(--accent); color: #111; font-weight: 700; }
   #toolPop { position: absolute; right: 8px; bottom: 8px; display: none; flex-direction: column; gap: 6px; padding: 8px; background: #111827;
@@ -168,14 +172,8 @@
   #toolPop button.on { background: var(--accent); border-color: var(--accent); color: #111; }
   /* telefon: føring, tekst og vis-endringer samles bak 🛠 så paletten får plass */
   @media (max-width: 899px) {
-    #tools.eq #runBtn, #tools.eq #txtBtn, #tools.eq #chgBtn { display: none !important; }
-    #tools.eq #toolsBtn { display: block; }
+    #ed.eqsel #tools { display: none; }
   }
-  #tools.eq #runBtn, #tools.eq #txtBtn { display: block; }
-  #txtBtn { flex: none; width: 42px; height: 40px; padding: 0; border-radius: 999px; font-size: 18px; font-weight: 700; font-family: Georgia, serif; }
-  #txtBtn.on { background: #2563eb; border-color: #2563eb; color: #fff; }
-  #runBtn { flex: none; width: 42px; height: 40px; padding: 0; border-radius: 999px; font-size: 20px; }
-  #runBtn.on { background: #dc2626; border-color: #dc2626; color: #fff; }
   #npick { position: absolute; display: none; gap: 4px; padding: 5px; background: #111827; border-radius: 999px; box-shadow: 0 6px 20px rgba(0,0,0,.35); z-index: 4; }
   #npick.on { display: flex; }
   #npick button { width: 40px; height: 40px; padding: 0; border-radius: 999px; background: #273244; border: none; color: #fff; font-weight: 700; font-size: 16px; }
@@ -185,7 +183,6 @@
   #rowBtn { flex: none; border-radius: 999px; padding: 8px 12px; font-weight: 600; }
   #rowBtn.on { background: #0d9488; border-color: #0d9488; color: #fff; }
   #tools.eq #pal { display: flex; }
-  #tools.eq #chgBtn { display: block; }
   #pal { flex: 1; gap: 6px; overflow-x: auto; scrollbar-width: none; touch-action: pan-x; }
   #pal::-webkit-scrollbar { display: none; }
   .pchip { flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 6px; min-width: 64px; max-width: 86px;
@@ -194,13 +191,51 @@
   .pchip span { font-size: 11px; line-height: 1.15; max-width: 78px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
   .pchip.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
   .paltip { color: var(--muted); font-size: 13px; padding: 8px; }
-  #chgBtn { flex: none; width: 42px; height: 40px; padding: 0; border-radius: 999px; font-size: 17px; opacity: .55; }
-  #chgBtn.on { opacity: 1; background: #fff; color: #111; }
-  #eqbar { position: absolute; display: none; align-items: center; gap: 4px; padding: 5px 6px 5px 12px; background: #111827; color: #fff;
-    border-radius: 999px; box-shadow: 0 6px 20px rgba(0,0,0,.35); z-index: 3; white-space: nowrap; }
-  #eqbar.on { display: flex; }
-  #eqbar b { font-size: 13px; font-weight: 600; margin-right: 4px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
-  #eqbar button { width: 38px; height: 38px; padding: 0; border-radius: 999px; background: #273244; border: none; font-size: 17px; }
+  svg.ic { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+  .ib svg.ic { width: 24px; height: 24px; }
+  #tools.eq { flex-direction: column; align-items: stretch; gap: 6px; padding-bottom: calc(4px + var(--safe-b)); }
+  #tools.eq #pal { flex: none; }
+  #tools.eq #eqnav { display: flex; }
+  #eqnav { align-items: stretch; gap: 4px; border-top: 1px solid var(--line); padding-top: 6px; }
+  #eqnav .nv { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 0 3px; background: transparent; border: none;
+    border-radius: 12px; color: var(--muted); font-size: 12px; position: relative; }
+  #eqnav .nv svg { width: 34px; height: 26px; padding: 2px 6px; border-radius: 13px; box-sizing: content-box; }
+  #eqnav .nv.on { color: #fdba74; font-weight: 700; }
+  #eqnav .nv.on svg { background: rgba(249,115,22,.22); }
+  #eqnav .nv.on::before { content: ''; position: absolute; top: -7px; left: 30%; right: 30%; height: 3px; border-radius: 3px; background: var(--accent); }
+  .nvtog { flex: 1.25; display: flex; align-items: center; gap: 6px; padding: 4px 8px; margin-left: 4px; background: transparent; border: none;
+    border-left: 1px solid var(--line); border-radius: 0; color: var(--muted); text-align: left; }
+  .nvtog span { display: flex; flex-direction: column; line-height: 1.15; min-width: 0; }
+  .nvtog b { font-size: 12px; font-weight: 600; color: var(--text); }
+  .nvtog small { font-size: 11px; }
+  .nvtog .sw { flex: none; width: 30px; height: 18px; border-radius: 9px; border: 2px solid var(--muted); position: relative; margin-left: auto; }
+  .nvtog .sw::after { content: ''; position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); transition: left .15s; }
+  .nvtog.on .sw { border-color: #fff; background: #fff; }
+  .nvtog.on .sw::after { left: 14px; background: #111; }
+  .nvtog.on { color: var(--text); }
+  .nvtog .off { display: none; } .nvtog:not(.on) .off { display: inline; }
+  #eqbar { display: none; background: var(--panel); border-top: 1px solid var(--line); padding: 10px 12px calc(10px + var(--safe-b)); }
+  #eqbar.on { display: block; }
+  #eqbar .hd { display: flex; align-items: center; gap: 8px; }
+  #eqbar .tt { flex: 1; min-width: 0; }
+  #eqbar .tt b { display: block; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #eqbar .tt small { display: block; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #eqbar .hint { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+  #eqbar .acts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+  #eqbar .acts button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 8px 2px 6px; min-height: 58px;
+    font-size: 12px; border-radius: 12px; background: var(--panel2); border: none; }
+  #eqbar .acts button b { font-size: 16px; line-height: 22px; }
+  #eqbar .acts button.dz { color: #fca5a5; }
+  #eqbar .acts button.on { background: rgba(37,99,235,.35); box-shadow: inset 0 0 0 2px #2563eb; }
+  #npick { left: 50%; bottom: 10px; transform: translateX(-50%); }
+  #dragTag { position: absolute; display: none; pointer-events: none; z-index: 4; padding: 5px 10px; border-radius: 999px; font-size: 13px; font-weight: 700;
+    background: #111827; color: #fff; white-space: nowrap; box-shadow: 0 4px 14px rgba(0,0,0,.35); }
+  #dragTag.on { display: block; }
+  #dragTag.stack { background: #f97316; color: #111; }
+  @media (min-width: 900px) {
+    #eqbar { grid-area: sel; border-left: 1px solid var(--line); border-top: none; }
+    #eqnav { flex-wrap: wrap; }
+  }
 </style>
 </head>
 <body>
@@ -227,15 +262,16 @@
   <div class="top">
     <button class="ib" id="backBtn" aria-label="Tilbake">←</button>
     <div class="title" id="edTitle">–</div>
-    <button class="ib" id="listBtn" aria-label="Punktliste">☰</button>
-    <button class="ib" id="menuBtn" aria-label="Meny">⋯</button>
+    <button class="ib" id="listBtn" aria-label="Punktliste" hidden>☰</button>
+    <button class="ib" id="undoBtn" aria-label="Angre" title="Angre (Ctrl+Z)"><svg class="ic" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+    <button class="ib" id="menuBtn" aria-label="Meny"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="12" cy="19" r="1.2"/></svg></button>
   </div>
   <div id="modeSeg"><button data-m="utstyr" class="on">🔌 Utstyr</button><button data-m="mal">📏 Takpunkter</button></div>
   <div id="stage">
     <canvas id="cv"></canvas>
-    <div id="eqbar"></div>
     <div id="npick"></div>
     <div id="toolPop"></div>
+    <div id="dragTag"></div>
     <div id="banner"><span id="bannerTxt"></span><button id="bannerBtn">Avbryt</button></div>
     <div id="loading">Laster tegning …</div>
   </div>
@@ -252,16 +288,19 @@
       <button class="dimbtn y" id="selY"><span class="lab">Y ↕</span><span class="val" id="selYv">–</span><small id="selYs"></small></button>
     </div>
   </div>
+  <div id="eqbar" aria-live="polite"></div>
   <div id="tools">
     <div id="chips"></div>
     <button id="placeBtn" class="on">＋ Plasser</button>
     <button id="rowBtn" aria-label="Lag rad">⋯ Rad</button>
     <div id="pal"></div>
-    <button id="runBtn" aria-label="Tegn føring" data-label="Føring">〰</button>
-    <button id="txtBtn" aria-label="Tekst" data-label="Tekst">T</button>
-    <button id="toolsBtn" aria-label="Verktøy">🛠</button>
-    <button id="chgBtn" class="on" aria-label="Vis endringer" data-label="Vis endringer">👁</button>
-    <button id="undoBtn" aria-label="Angre" data-label="Angre">↶</button>
+    <div id="eqnav" role="toolbar" aria-label="Verktøy">
+      <button id="selBtn" class="nv on" aria-pressed="true"><svg class="ic" viewBox="0 0 24 24"><path d="M6 3l12 9l-6 1l3 7l-3 1l-3-7l-3 4z"/></svg><span>Velg</span></button>
+      <button id="runBtn" class="nv" aria-pressed="false"><svg class="ic" viewBox="0 0 24 24"><path d="M3 15c3-8 6-8 9 0s6 8 9 0"/></svg><span>Føring</span></button>
+      <button id="txtBtn" class="nv" aria-pressed="false"><svg class="ic" viewBox="0 0 24 24"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></svg><span>Tekst</span></button>
+      <button id="chgBtn" class="nvtog on" role="switch" aria-checked="true"><svg class="ic" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7s10 7 10 7s-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path class="off" d="M3 3l18 18"/></svg><span><b>Endringer</b><small>vises</small></span><i class="sw"></i></button>
+    </div>
+    <button id="toolsBtn" hidden></button>
   </div>
 </section>
 
