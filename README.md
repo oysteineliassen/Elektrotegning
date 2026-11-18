@@ -25,3 +25,5 @@ DWG: lagre som DXF i AutoCAD LT først.
 - Takpunktene vises uten mål i **Utstyr**, kan kobles med føringer og eksporteres i DXF som blokkene E_DOWNLIGHT, E_SPOT, E_ROYKVARSLER, E_HOYTTALER, E_KOBLINGSBOKS (lampepunkt bruker tegningens E_LYS).
 - **Eksport** (meny → Eksporter): PDF i valgt papirstørrelse og målestokk (vektor fra DXF, bilde fra PDF-underlag), DXF «som bygget», eller bilde. Eksporterer det som vises: Takpunkter (med mål) eller Utstyr (installasjonstegning).
 - **Kursnummer**: trykk på første punkt etter tavla → «Kurs» → skriv nummer (f.eks. 3 → «-F3»). Fordeling kan legges til ved flere tavler (=433.11). Sirkelen peker mot tavla, hold inne og dra for å flytte den. Følger med i DXF og PDF.
+- **PC**: på stor skjerm ligger verktøyene i et sidepanel. Med mus drar du symboler direkte (ikke langtrykk). Snarveier: Del = slett, Ctrl+Z = angre, R = roter, F = tilpass, +/- = zoom, Esc = avbryt.
+- **Synk**: ☁ på startsiden. Prosjektene lagres i et privat GitHub-repo (fine-grained token med Contents: Read and write, bare for det repoet). Synker automatisk ved endringer og når appen åpnes. Ved konflikt vinner nyeste endring.

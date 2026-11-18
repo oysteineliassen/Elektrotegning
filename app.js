@@ -658,6 +658,12 @@ cv.addEventListener('pointermove', e => {
     req();
     return;
   }
+  if (gest.type === 'pending' && e.pointerType === 'mouse' && Math.hypot(p.x - gest.x0, p.y - gest.y0) > 4 && (gest.hp || gest.hi || gest.hk)) {
+    clearTimeout(lpTimer);
+    if (gest.hk) gest.type = 'kdrag';
+    else if (gest.hi) startItemDrag(gest.hi, gest.x0, gest.y0);
+    else startDrag(gest.hp, gest.x0, gest.y0);
+  }
   if (gest.type === 'pending' && Math.hypot(p.x - gest.x0, p.y - gest.y0) > 9) {
     clearTimeout(lpTimer);
     gest.type = 'pan';
@@ -794,18 +800,21 @@ $('#undoBtn').onclick = () => {
   if (selId && !P.points.find(p => p.id === selId)) selId = null;
   updatePanelVisibility(); save(); req();
 };
-let saveTimer = 0;
+let saveTimer = 0, savePending = false;
 function save() {
   clearTimeout(saveTimer);
   updateTitle();
   const proj = P;
+  savePending = true;
   saveTimer = setTimeout(() => {
+    savePending = false;
     proj.updated = Date.now();
     store.put({ ...proj, points: proj.points.map(clean) }).catch(err => toast('Kunne ikke lagre: ' + err));
   }, 300);
 }
 function flushSave() {
-  if (!P) return Promise.resolve();
+  if (!P || !savePending) return Promise.resolve();
+  savePending = false;
   clearTimeout(saveTimer);
   P.updated = Date.now();
   return store.put({ ...P, points: P.points.map(clean) }).catch(() => { });
@@ -1269,7 +1278,7 @@ function updateTitle() {
   if (!P) return;
   const sub = P.kind === 'pdf' ? `PDF · ${P.scaleText ? (P.scaleText === 'kalibrert' ? 'kalibrert' : 'målestokk ' + P.scaleText) : 'mangler målestokk'}` : `DXF · ${P.units}`;
   let tail = P.points.length ? P.points.length + ' punkter' : 'trykk for å plassere';
-  if (typeof eqActive === 'function' && eqActive()) { const n = changeCount(); tail = n ? n + ' endringer' : 'hold inne for å flytte'; }
+  if (typeof eqActive === 'function' && eqActive()) { const n = changeCount(); tail = n ? n + ' endringer' : (matchMedia('(pointer: fine)').matches ? 'dra for å flytte' : 'hold inne for å flytte'); }
   $('#edTitle').innerHTML = `${esc(P.name)}<small>${esc(sub)} · ${esc(tail)}</small>`;
 }
 
@@ -1435,6 +1444,42 @@ if (!standalone && /iP(hone|ad|od)/.test(navigator.userAgent)) {
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('sw.js').catch(() => { });
 }
+
+/* ---------------- PC: peker og tastatur ---------------- */
+cv.addEventListener('pointermove', e => {
+  if (e.pointerType !== 'mouse' || ptrs.size || !doc || !P) return;
+  const p = pos(e);
+  let hit = false;
+  if (typeof eqActive === 'function' && eqActive()) hit = !!(hitKurs(p.x, p.y) || hitItem(p.x, p.y) || hitRun(p.x, p.y));
+  else hit = !!(hitPoint(p.x, p.y) || hitLabel(p.x, p.y));
+  cv.style.cursor = hit ? 'pointer' : (mode === 'edit' && !placing && !eqActive() ? 'grab' : 'crosshair');
+});
+document.addEventListener('keydown', e => {
+  if (!P || !doc || $('#modal').classList.contains('on')) return;
+  if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement && document.activeElement.tagName)) return;
+  const k = e.key, ctrl = e.ctrlKey || e.metaKey;
+  const eq = typeof eqActive === 'function' && eqActive();
+  if (ctrl && (k === 'z' || k === 'Z')) { e.preventDefault(); $('#undoBtn').click(); return; }
+  if (k === 'Escape') {
+    if (mode === 'row') endRow();
+    else if (mode === 'calib') $('#bannerBtn').click();
+    else if (eq && eqTool === 'run') setRunTool(false);
+    else if (eq && eqArm) setArm(null);
+    else { select(null); if (eq) { eqSel = null; runSel = null; updateEqBar(); req(); } }
+    return;
+  }
+  if (k === 'Delete' || k === 'Backspace') {
+    e.preventDefault();
+    if (eq && eqSel) eqAction('del');
+    else if (eq && runSel) runAction('rdel');
+    else if (!eq && selId) $('#selDel').click();
+    return;
+  }
+  if (eq && eqSel && (k === 'r' || k === 'R')) { eqAction('rot'); return; }
+  if (k === 'f' || k === 'F') { fitView(); return; }
+  if (k === '+' || k === '=') { zoomAt(cw / 2, ch / 2, 1.25); afterView(); return; }
+  if (k === '-') { zoomAt(cw / 2, ch / 2, 0.8); afterView(); return; }
+});
 
 /* ---------------- Start ---------------- */
 (async function init() {

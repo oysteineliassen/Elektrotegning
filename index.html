@@ -129,6 +129,31 @@
     box-shadow: 0 6px 20px rgba(0,0,0,.3); opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 30; max-width: 90vw; text-align: center; }
   #toast.on { opacity: 1; }
   #fileIn { display: none; }
+  #syncBtn { padding: 6px 12px; font-size: 18px; opacity: .6; }
+  #syncBtn.on { opacity: 1; color: #93c5fd; }
+  #syncState { color: var(--muted); font-size: 13px; min-height: 0; margin: 0 2px 4px; }
+  #syncState:empty { display: none; }
+
+  /* PC / stor skjerm: tegning til venstre, verktøy i sidepanel */
+  @media (min-width: 900px) {
+    #home header, #homeBody { max-width: 760px; width: 100%; margin: 0 auto; }
+    #ed.on { display: grid; grid-template-columns: 1fr 340px; grid-template-rows: auto auto auto 1fr; grid-template-areas: "top top" "stage mode" "stage sel" "stage tools"; }
+    #ed .top { grid-area: top; }
+    #stage { grid-area: stage; }
+    #modeSeg { grid-area: mode; border-left: 1px solid var(--line); }
+    #sel { grid-area: sel; border-left: 1px solid var(--line); border-top: none; }
+    #tools { grid-area: tools; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 10px;
+      border-left: 1px solid var(--line); border-top: none; overflow-y: auto; padding: 12px; }
+    #chips, #pal { flex: none; flex-wrap: wrap; overflow: visible; }
+    #tools.eq #pal { display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-rows: min-content; align-content: start; gap: 6px; flex: none !important; }
+    #chips { flex: none !important; }
+    .pchip { min-width: 0; max-width: none; }
+    #tools > button { width: 100% !important; height: auto !important; padding: 10px 12px !important; border-radius: 10px !important; text-align: left; font-size: 15px !important; }
+    #tools > button[data-label]::after { content: "  " attr(data-label); }
+    #tools #placeBtn, #tools #rowBtn { order: -1; }
+    .dlg { max-width: 520px; }
+    #cv { cursor: crosshair; }
+  }
   #modeSeg { display: none; gap: 6px; padding: 6px 8px; background: var(--panel); border-bottom: 1px solid var(--line); }
   #modeSeg.on { display: flex; }
   #modeSeg button { flex: 1; padding: 7px; border-radius: 999px; font-size: 14px; }
@@ -170,8 +195,10 @@
   <header>
     <h1>Elektro<span>tegning</span></h1>
     <button id="installBtn" style="display:none">Installer</button>
+    <button id="syncBtn" aria-label="Synk">☁</button>
   </header>
   <div id="homeBody">
+    <div id="syncState"></div>
     <button class="newbtn" id="newBtn">＋ Last inn tegning (PDF / DXF)</button>
     <div id="plist"></div>
     <div class="hint" id="homeHint">
@@ -213,9 +240,9 @@
     <button id="placeBtn" class="on">＋ Plasser</button>
     <button id="rowBtn" aria-label="Lag rad">⋯ Rad</button>
     <div id="pal"></div>
-    <button id="runBtn" aria-label="Tegn føring">〰</button>
-    <button id="chgBtn" class="on" aria-label="Vis endringer">👁</button>
-    <button id="undoBtn" aria-label="Angre">↶</button>
+    <button id="runBtn" aria-label="Tegn føring" data-label="Føring">〰</button>
+    <button id="chgBtn" class="on" aria-label="Vis endringer" data-label="Vis endringer">👁</button>
+    <button id="undoBtn" aria-label="Angre" data-label="Angre">↶</button>
   </div>
 </section>
 
@@ -228,5 +255,6 @@
 <script src="app.js"></script>
 <script src="eq.js"></script>
 <script src="pdfexport.js"></script>
+<script src="sync.js"></script>
 </body>
 </html>
