@@ -1190,19 +1190,33 @@ function openMenu() {
 }
 
 /* Eksport */
-async function shareOrDownload(blob, filename, title) {
-  const file = new File([blob], filename, { type: blob.type });
-  try {
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title });
-      return;
-    }
-  } catch (e) { if (e && e.name === 'AbortError') return; }
+function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
   toast('Lastet ned ' + filename);
+}
+// Spør alltid: last ned (lagre fil) eller del via andre apper
+function shareOrDownload(blob, filename, title) {
+  const file = new File([blob], filename, { type: blob.type });
+  let canShare = false;
+  try { canShare = !!(navigator.canShare && navigator.canShare({ files: [file] })); } catch (e) { }
+  const kb = blob.size > 1e6 ? (blob.size / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(blob.size / 1e3)) + ' kB';
+  return new Promise(res => {
+    dialog(`<h2>Fil klar</h2><p>${esc(filename)} · ${kb}</p>
+      <div class="menu"><button class="primary" data-dl>⬇ Last ned / lagre</button>${canShare ? '<button data-sh>↗ Del til app …</button>' : ''}</div>
+      <div class="btns"><button data-x>Lukk</button></div>`, (el, close) => {
+      $('[data-x]', el).onclick = () => { close(); res(); };
+      $('[data-dl]', el).onclick = () => { close(); downloadBlob(blob, filename); res(); };
+      const sh = $('[data-sh]', el);
+      if (sh) sh.onclick = async () => {
+        close();
+        try { await navigator.share({ files: [file], title }); } catch (e) { if (!e || e.name !== 'AbortError') downloadBlob(blob, filename); }
+        res();
+      };
+    });
+  });
 }
 function safeName(s) { return s.replace(/[^\wæøåÆØÅ\- ]+/g, '').trim().replace(/\s+/g, '_') || 'plan'; }
 function renderExportCanvas(maxSide, footer, area) {

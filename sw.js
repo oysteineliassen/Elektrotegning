@@ -1,4 +1,4 @@
-const CACHE = 'elektrotegning-v9';
+const CACHE = 'elektrotegning-v10';
 const FILES = ['./', './index.html', './app.js', './dxf.js', './eq.js', './pdfexport.js', './sync.js', './manifest.webmanifest',
   './vendor/pdf.min.js', './vendor/pdf.worker.min.js', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png'];
 self.addEventListener('install', e => {
