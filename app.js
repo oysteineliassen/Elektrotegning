@@ -322,6 +322,24 @@ let cw = 1, ch = 1, dpr = 1;
 const cv = $('#cv');
 
 /* ---------------- Mål ---------------- */
+// Sørg for at alle punktene (tegningsenheter) synes i øvre del av skjermen (over en lav dialog)
+function bringIntoView(pts, top = 0.07, bot = 0.5) {
+  const m = 28, xs = pts.map(q => q.x), ys = pts.map(q => q.y);
+  const ux0 = Math.min(...xs), ux1 = Math.max(...xs), uy0 = Math.min(...ys), uy1 = Math.max(...ys);
+  const in_ = q => { const X = q.x * view.s + view.tx, Y = q.y * view.s + view.ty; return X > m && X < cw - m && Y > ch * top && Y < ch * bot; };
+  if (pts.every(in_)) return;
+  const need = Math.min((cw - 2 * m) / ((ux1 - ux0) || 1e-9), (ch * (bot - top)) / ((uy1 - uy0) || 1e-9)) * 0.9;
+  if (view.s > need) view.s = need;
+  view.tx = cw / 2 - (ux0 + ux1) / 2 * view.s;
+  view.ty = ch * (top + bot) / 2 - (uy0 + uy1) / 2 * view.s;
+  afterView();
+}
+function dimEnd(p, side) {
+  const d = dimsOf(p), v = dist(d, side);
+  if (v == null) return { x: p.x, y: p.y };
+  return { x: p.x + (side === 'L' ? -v : side === 'R' ? v : 0), y: p.y + (side === 'U' ? -v : side === 'D' ? v : 0) };
+}
+let dimFocus = null; // { id, axis, side } – målet som redigeres, fremheves i tegningen
 function dimsOf(p) {
   if (p._d) return p._d;
   const mpu = P.mmPerUnit;
@@ -449,6 +467,7 @@ function drawOverlay(ctx, v, o) {
     const ji = typeof joistInfo === 'function' && joistInfo(p);
     if (ji && ji.hit) drawJoistWarn(ctx, sx, sy, k);
   });
+  if (typeof drawJoistPreview === 'function') drawJoistPreview(ctx, v, o);
   if (o.main && rowPreview) {
     ctx.globalAlpha = 0.75;
     rowPreview.forEach(q => drawSym(ctx, { type: curType }, q.x * v.s + v.tx, q.y * v.s + v.ty, 11 * k, false, '', k));
@@ -476,18 +495,36 @@ function drawDims(ctx, v, p, o) {
   const k = o.k, d = dimsOf(p);
   const sx = p.x * v.s + v.tx, sy = p.y * v.s + v.ty;
   const sel = !o.export && (p.id === selId || p === dragPt);
-  const lw = (sel ? 2 : 1.3) * k;
-  if (d.xs) {
-    const dd = dist(d, d.xs);
-    const wx = sx + (d.xs === 'L' ? -1 : 1) * dd * v.s;
-    dimLine(ctx, sx, sy, wx, sy, '#2563eb', lw, k);
-    dimLabel(ctx, fmt(dd), (sx + wx) / 2, sy, Math.abs(wx - sx), true, '#2563eb', k, sel, o.main ? { p, axis: 'x' } : null, d.xs === 'L' ? -1 : 1);
-  }
-  if (d.ys) {
-    const dd = dist(d, d.ys);
-    const wy = sy + (d.ys === 'U' ? -1 : 1) * dd * v.s;
-    dimLine(ctx, sx, sy, sx, wy, '#c026d3', lw, k);
-    dimLabel(ctx, fmt(dd), sx, (sy + wy) / 2, Math.abs(wy - sy), false, '#c026d3', k, sel, o.main ? { p, axis: 'y' } : null, d.ys === 'U' ? -1 : 1);
+  const foc = !o.export && dimFocus && dimFocus.id === p.id ? dimFocus : null;
+  for (const axis of ['x', 'y']) {
+    const side = foc && foc.axis === axis && foc.side ? foc.side : (axis === 'x' ? d.xs : d.ys);
+    if (!side) continue;
+    const dd = dist(d, side);
+    if (dd == null) continue;
+    const isF = foc && foc.axis === axis, dim = foc && !isF;
+    const lock = axis === 'x' ? p.lockX : p.lockY, locked = lock && lock === side;
+    const col = axis === 'x' ? '#2563eb' : '#c026d3';
+    const sg = (side === 'L' || side === 'U') ? -1 : 1;
+    const ex = axis === 'x' ? sx + sg * dd * v.s : sx, ey = axis === 'y' ? sy + sg * dd * v.s : sy;
+    ctx.save();
+    if (dim) ctx.globalAlpha = 0.3;
+    const lw = (isF ? 3.2 : sel ? 2 : 1.3) * k;
+    if (isF) { // glød + vegg det måles fra
+      ctx.strokeStyle = axis === 'x' ? 'rgba(37,99,235,.25)' : 'rgba(192,38,211,.25)'; ctx.lineWidth = 12 * k; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+      const L = 46 * k;
+      ctx.strokeStyle = col; ctx.lineWidth = 7 * k;
+      ctx.beginPath();
+      if (axis === 'x') { ctx.moveTo(ex, ey - L); ctx.lineTo(ex, ey + L); } else { ctx.moveTo(ex - L, ey); ctx.lineTo(ex + L, ey); }
+      ctx.stroke();
+      ctx.font = `700 ${11 * k}px system-ui, sans-serif`; ctx.fillStyle = col; ctx.textBaseline = 'middle';
+      const tx = SIDE_TXT[side].replace('fra ', 'Måles fra ');
+      if (axis === 'x') { ctx.textAlign = sg < 0 ? 'left' : 'right'; ctx.fillText(tx, ex - sg * 8 * k, ey - L - 8 * k); }
+      else { ctx.textAlign = 'left'; ctx.fillText(tx, ex + L + 6 * k, ey); }
+    }
+    dimLine(ctx, sx, sy, ex, ey, col, lw, k, locked);
+    dimLabel(ctx, fmt(dd), (sx + ex) / 2, (sy + ey) / 2, Math.abs(axis === 'x' ? ex - sx : ey - sy), axis === 'x', col, k, sel || isF, o.main ? { p, axis } : null, sg, locked);
+    ctx.restore();
   }
 }
 function drawSpacing(ctx, v, p, o) {
@@ -508,9 +545,10 @@ function drawSpacing(ctx, v, p, o) {
     dimLabel(ctx, 'c/c ' + fmt(d), (ax + bx) / 2, (ay + by) / 2, 1e9, horiz, col, k, false, o.main ? { p, axis: 'c' + side, nb: q } : null, 0);
   }
 }
-function dimLine(ctx, x1, y1, x2, y2, col, lw, k) {
+function dimLine(ctx, x1, y1, x2, y2, col, lw, k, locked) {
   ctx.strokeStyle = col; ctx.lineWidth = lw;
-  ctx.setLineDash([5 * k, 3 * k]);
+  // låst (skrevet inn) = hel linje, beregnet = stiplet
+  ctx.setLineDash(locked ? [] : [5 * k, 3 * k]);
   ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
   ctx.setLineDash([]);
   const t = 7 * k;
@@ -520,10 +558,11 @@ function dimLine(ctx, x1, y1, x2, y2, col, lw, k) {
   else { ctx.moveTo(x2 - t, y2); ctx.lineTo(x2 + t, y2); }
   ctx.stroke();
 }
-function dimLabel(ctx, txt, cx, cy, len, horiz, col, k, sel, hit, dirSign) {
+function dimLabel(ctx, txt, cx, cy, len, horiz, col, k, sel, hit, dirSign, locked) {
   const fs = (sel ? 14 : 12) * k;
   ctx.font = `700 ${fs}px system-ui, sans-serif`;
-  const w = ctx.measureText(txt).width + 12 * k, h = fs + 8 * k;
+  const lk = locked ? fs * 0.9 : 0;
+  const w = ctx.measureText(txt).width + 12 * k + lk, h = fs + 8 * k;
   // for kort linje: legg merket utenfor veggen
   if (horiz && len < w + 26 * k) cx += dirSign * (len / 2 + w / 2 + 6 * k);
   if (!horiz && len < h + 26 * k) cy += dirSign * (len / 2 + h / 2 + 6 * k);
@@ -534,7 +573,13 @@ function dimLabel(ctx, txt, cx, cy, len, horiz, col, k, sel, hit, dirSign) {
   ctx.lineWidth = 1.5 * k; ctx.strokeStyle = col; ctx.stroke();
   ctx.fillStyle = sel ? '#fff' : col;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(txt, cx, cy + 0.5 * k);
+  ctx.fillText(txt, cx + lk / 2, cy + 0.5 * k);
+  if (locked) { // liten hengelås foran tallet
+    const lx = x + 6 * k + lk * 0.45, ly = cy + 1 * k, u = lk * 0.32;
+    ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = 1.4 * k;
+    ctx.fillRect(lx - u, ly - u * 0.2, u * 2, u * 1.5);
+    ctx.beginPath(); ctx.arc(lx, ly - u * 0.2, u * 0.7, Math.PI, 0); ctx.stroke();
+  }
   if (hit) labels.push({ ...hit, x: x - 6, y: y - 6, w: w + 12, h: h + 12, sel });
 }
 function drawSym(ctx, p, sx, sy, r, sel, num, k) {
@@ -797,8 +842,8 @@ function updatePanel() {
   const p = P.points[i], d = dimsOf(p);
   $('#selTitle').textContent = `#${i + 1} ${(TYPES[p.type] || TYPES.downlight).name}`;
   const xv = d.xs ? fmt(dist(d, d.xs)) : '–', yv = d.ys ? fmt(dist(d, d.ys)) : '–';
-  const xs = d.xs ? `${SIDE_ARW[d.xs]} ${SIDE_TXT[d.xs]}${p.lockX ? ' 🔒' : ''}` : 'ingen vegg funnet';
-  const ys = d.ys ? `${SIDE_ARW[d.ys]} ${SIDE_TXT[d.ys]}${p.lockY ? ' 🔒' : ''}` : 'ingen vegg funnet';
+  const xs = d.xs ? `${SIDE_ARW[d.xs]} ${SIDE_TXT[d.xs]} · ${p.lockX ? 'låst' : 'beregnet'}` : 'ingen vegg funnet';
+  const ys = d.ys ? `${SIDE_ARW[d.ys]} ${SIDE_TXT[d.ys]} · ${p.lockY ? 'låst' : 'beregnet'}` : 'ingen vegg funnet';
   if ($('#selXv').textContent !== xv) $('#selXv').textContent = xv;
   if ($('#selYv').textContent !== yv) $('#selYv').textContent = yv;
   if ($('#selXs').textContent !== xs) $('#selXs').textContent = xs;
@@ -855,12 +900,13 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) flush
 
 /* ---------------- Dialoger ---------------- */
 let dlgClose = null;
-function dialog(html, setup) {
+function dialog(html, setup, opts) {
   const m = $('#modal'), d = $('#dlg');
   delete d.dataset.lock;
   d.innerHTML = html;
+  m.classList.toggle('low', !!(opts && opts.low));
   m.classList.add('on');
-  const close = () => { m.classList.remove('on'); d.innerHTML = ''; dlgClose = null; };
+  const close = () => { m.classList.remove('on', 'low'); d.innerHTML = ''; dlgClose = null; if (opts && opts.onClose) opts.onClose(); };
   dlgClose = close;
   if (setup) setup(d, close);
   return close;
@@ -905,7 +951,11 @@ function editDim(p, axis) {
     const v = dist(d, s);
     return `<button data-side="${s}" ${v == null ? 'disabled' : ''}>${SIDE_ARW[s]} ${SIDE_TXT[s].replace('fra ', 'Fra ')}<small>${v == null ? 'ingen vegg' : fmt(v) + ' mm'}</small></button>`;
   };
+  dimFocus = { id: p.id, axis, side };
+  bringIntoView([p, dimEnd(p, side)]);
+  req();
   dialog(`<h2>${axis === 'x' ? 'X-mål ↔' : 'Y-mål ↕'} – punkt ${P.points.indexOf(p) + 1}</h2>
+    <p>${(axis === 'x' ? p.lockX : p.lockY) ? 'Låst mål (skrevet inn). Vises med hel linje og hengelås i tegningen.' : 'Beregnet mot nærmeste vegg (stiplet linje). Skriv inn et mål for å låse det.'}</p>
     <div class="seg">${btn(sides[0])}${btn(sides[1])}</div>
     <label class="f">Avstand i mm</label>
     <input id="dIn" class="bigin" inputmode="decimal" autocomplete="off">
@@ -915,7 +965,7 @@ function editDim(p, axis) {
     </div>`, (el, close) => {
     const inp = $('#dIn', el);
     const setSide = s => {
-      side = s;
+      side = s; dimFocus = { id: p.id, axis, side: s }; bringIntoView([p, dimEnd(p, s)]); req();
       el.querySelectorAll('[data-side]').forEach(b => b.classList.toggle('on', b.dataset.side === s));
       inp.value = fmt(dist(d, s));
     };
@@ -941,7 +991,7 @@ function editDim(p, axis) {
       if (axis === 'x') p.lockX = null; else p.lockY = null;
       p._d = null; close(); save(); req();
     };
-  });
+  }, { low: true, onClose: () => { dimFocus = null; req(); } });
 }
 
 /* Avstand c/c mellom to punkter på linje */
@@ -1048,6 +1098,7 @@ function rowDialog() {
 }
 
 /* Målestokk */
+$('#calBtn').onclick = () => P && askScale();
 function askScale(onDone) {
   const isPdf = P.kind === 'pdf';
   if (!isPdf) { openSettings(); return; }
@@ -1339,6 +1390,7 @@ function updateTitle() {
   if (P.kind === 'pdf' && !P.mmPerUnit) parts.push('ikke kalibrert');
   if (typeof eqActive === 'function' && eqActive()) { const n = changeCount(); if (n) parts.push(n + (n === 1 ? ' endring' : ' endringer')); }
   $('#edTitle').innerHTML = `${esc(P.name)}<small>${esc(parts.join(' · '))}</small>`;
+  $('#calWarn').classList.toggle('on', P.kind === 'pdf' && !P.mmPerUnit && !!doc);
 }
 
 async function openProject(p, fresh) {
