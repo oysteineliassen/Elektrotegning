@@ -217,6 +217,7 @@ function pdfContent(L) {
     const t = staticDisp(t0); if (!t) continue;
     pen.text(aci(Ls[t.l].color === 7 ? 8 : Ls[t.l].color), t.x, t.y, t.h, t.rot, t.s, t.ha, t.va);
   }
+  for (const k of Object.keys((P.eq && P.eq.notes) || {})) { const it = itemByKey(k), d = it && noteDisp(it); if (d) pen.text(aci(Ls[d.l].color), d.x, d.y, d.h, 0, d.s, d.ha, d.va); }
   for (const a of ((P.eq && P.eq.texts && P.eq.texts.added) || [])) { const d = addedDisp(a); pen.text(aci(Ls[d.l] ? Ls[d.l].color : 7), d.x, d.y, d.h, 0, d.s, d.ha, d.va); }
   // føringer
   const runs = (P.eq && P.eq.runs) || [];

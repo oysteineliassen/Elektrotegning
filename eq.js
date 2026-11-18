@@ -264,6 +264,7 @@ function drawEquip(ctx, v, dpr, o, W, H) {
     }
   }
   drawAddedTexts(ctx, v, dpr, W, H);
+  drawNotes(ctx, v, dpr, W, H);
   if (!o.export && edMode === 'utstyr' && txtSel) drawTextSel(ctx, v, dpr);
   if (!o.export && edMode === 'utstyr' && runStart) {
     const it = itemByKey(runStart);
@@ -463,15 +464,15 @@ function updateEqBar() {
   if (te) {
     const sel = selTexts(), n = sel.length;
     html = `<b>${n > 1 ? n + ' tekster' : 'Tekst'}</b>` + (n === 1 ? `<button data-a="tedit" title="Endre tekst">✎</button>` : '')
-      + (sel.some(q => !q.added && txtEd(q.key)) ? `<button data-a="treset" title="Tilbake til original">↺</button>` : '')
+      + (sel.some(q => (q.note ? notesMap()[q.note.key].lx != null : !q.added && txtEd(q.key))) ? `<button data-a="treset" title="Tilbake til original">↺</button>` : '')
       + `<button data-a="tmulti" title="Velg flere" style="${txtMulti ? 'background:#2563eb' : ''}">⊞</button><button data-a="tdel" title="Slett">🗑</button>`;
   }
-  else if (it && it.isPt) html = `<b>${esc((TYPES[it.pt.type] || TYPES.downlight).name)}</b>${kb}<button data-a="del" title="Slett">🗑</button>`;
+  else if (it && it.isPt) html = `<b>${esc((TYPES[it.pt.type] || TYPES.downlight).name)}</b>${kb}<button data-a="note" title="Kommentar">💬</button><button data-a="del" title="Slett">🗑</button>`;
   else if (run) html = `<b>Føring</b><button data-a="rflip" title="Bøy andre veien">⇅</button><button data-a="rbend" title="Mer/mindre bue">⌒</button><button data-a="rdel" title="Slett">🗑</button>`;
   else html = `<b>${esc(prettyBlock(it.block))}${it.added ? ' · ny' : isMoved(it) ? ' · flyttet' : ''}</b>`
     + (countable(it.block) ? `<button class="num" data-a="n" title="Antall uttak">${it.n}×</button>` : '') + kb
     + (inStack(it) ? `<button data-a="swap" title="Bytt plass i stabelen">⇵</button>` : `<button data-a="rot" title="Roter 90°">⟳</button><button data-a="flip" title="Snu til andre siden av veggen">⇅</button>`)
-    + `<button data-a="dup" title="Kopier">⧉</button>`
+    + `<button data-a="note" title="Kommentar">💬</button><button data-a="dup" title="Kopier">⧉</button>`
     + (isMoved(it) ? `<button data-a="reset" title="Tilbake til prosjektert">↺</button>` : '')
     + `<button data-a="del" title="Slett">🗑</button>`;
   if (bar.dataset.k !== html) {
@@ -523,6 +524,7 @@ function eqAction(a) {
   const it = itemByKey(eqSel);
   if (!it) return;
   if (a === 'kurs') { editKurs(it.key); return; }
+  if (a === 'note') { noteDlg(it); return; }
   if (it.isPt) {
     if (a === 'del') { pushUndo(); P.points = P.points.filter(q => q !== it.pt); eqSel = null; save(); updateEqBar(); updateTitle(); req(); }
     return;
@@ -714,6 +716,59 @@ function labelDisp(it, t) {
   return { ...t, x: it.x + c * ax - sn * ay + (e.dx || 0), y: it.y + sn * ax + c * ay + (e.dy || 0), s };
 }
 function addedDisp(a) { return { x: a.x, y: a.y, h: a.h, rot: 0, ha: 'left', va: 'alphabetic', s: a.s, l: Math.max(0, layerIndex(a.layer)) }; }
+/* Kommentarer på utstyr («Komfyrvakt», «o/benk» …) – følger symbolet */
+const NOTE_SUGG = ['Komfyrvakt', 'o/benk', 'Kjøl/frys', 'Oppvaskmaskin', 'Stekeovn', 'Mikro', 'Vaskemaskin', 'Tørketrommel', 'VVB', 'IP44', 'Utvendig', 'TV', 'Data'];
+function notesMap() { return (P.eq.notes = P.eq.notes || {}); }
+function noteH() { const hs = doc.texts.filter(t => t.item).map(t => t.h).sort((a, b) => a - b); return hs.length ? hs[hs.length >> 1] : 100 / (P.mmPerUnit || 1); }
+function noteLayer(it) { const l = doc.r.layers.find(l => /tekst|text/i.test(l.name) && /^e/i.test(l.name)); return l ? l.name : it.layer; }
+function noteDefault(it) {
+  const mpu = P.mmPerUnit || 1, g = doc.geom(it.block), rad = g ? g.rad * Math.abs(it.sx) : 100 / mpu, info = infoOf(it.block);
+  if (info.wall) { const a = info.local + Math.PI, d = rad + 260 / mpu; return { lx: Math.cos(a) * d, ly: Math.sin(a) * d }; }
+  return { lx: rad + 260 / mpu, ly: -rad * 0.6 };
+}
+function noteDisp(it) {
+  const n = P.eq && P.eq.notes && P.eq.notes[it.key];
+  if (!n || it.del) return null;
+  const loc = n.lx != null ? n : noteDefault(it), c = itemCenter(it), cs = Math.cos(it.r), sn = Math.sin(it.r);
+  const li = Math.max(0, layerIndex(noteLayer(it)));
+  return { x: c.x + cs * loc.lx - sn * loc.ly, y: c.y + sn * loc.lx + cs * loc.ly, h: noteH(), rot: 0, ha: 'center', va: 'middle', s: n.s, l: li };
+}
+function setNoteWorld(it, w) {
+  const n = notesMap()[it.key], c = itemCenter(it), cs = Math.cos(-it.r), sn = Math.sin(-it.r), dx = w.x - c.x, dy = w.y - c.y;
+  n.lx = cs * dx - sn * dy; n.ly = sn * dx + cs * dy;
+}
+function drawNotes(ctx, v, dpr, W, H) {
+  const m = P.eq && P.eq.notes;
+  if (!m) return;
+  ctx.save();
+  ctx.setTransform(dpr * v.s, 0, 0, dpr * v.s, dpr * v.tx, dpr * v.ty);
+  for (const k of Object.keys(m)) { const it = itemByKey(k), d = it && noteDisp(it); if (d) drawText(ctx, d, v, W, H, aci(doc.r.layers[d.l].color), 0, 0); }
+  ctx.restore();
+}
+function noteDlg(it) {
+  const cur = P.eq.notes && P.eq.notes[it.key];
+  dialog(`<h2>Kommentar</h2><p>Vises ved symbolet og følger det når det flyttes.</p>
+    <div class="quick">${NOTE_SUGG.map(s => `<button data-s="${esc(s)}">${esc(s)}</button>`).join('')}</div>
+    <input id="nIn" autocomplete="off" placeholder="Egen tekst, f.eks. plasseres over benk" value="${esc(cur ? cur.s : '')}">
+    <div class="btns">${cur ? '<button class="danger" data-del>Fjern</button>' : ''}<button data-x>Avbryt</button><button class="primary" data-ok>OK</button></div>`, (el, close) => {
+    const inp = $('#nIn', el);
+    if (!matchMedia('(pointer: coarse)').matches) setTimeout(() => inp.focus(), 60);
+    const ok = () => {
+      const v = inp.value.trim();
+      if (!v) return;
+      pushUndo();
+      const m = notesMap();
+      m[it.key] = Object.assign(m[it.key] || {}, { s: v });
+      close(); save(); updateEqBar(); req();
+    };
+    el.querySelectorAll('[data-s]').forEach(b => b.onclick = () => { inp.value = b.dataset.s; ok(); });
+    $('[data-ok]', el).onclick = ok; inp.onkeydown = ev => { if (ev.key === 'Enter') ok(); };
+    $('[data-x]', el).onclick = close;
+    const d = $('[data-del]', el);
+    if (d) d.onclick = () => { pushUndo(); delete notesMap()[it.key]; close(); save(); updateEqBar(); req(); };
+  });
+}
+
 // alle tekster som kan velges, med posisjonen de vises på
 function allTextDisp() {
   const out = [];
@@ -726,6 +781,7 @@ function allTextDisp() {
     for (const t of it.labels) { const d = labelDisp(it, t); if (d) out.push({ key: tKey(t), d, base: t, item: it }); }
   }
   for (const a of ((P.eq && P.eq.texts && P.eq.texts.added) || [])) out.push({ key: 'n' + a.id, d: addedDisp(a), added: a });
+  for (const k of Object.keys((P.eq && P.eq.notes) || {})) { const it = itemByKey(k), d = it && noteDisp(it); if (d && doc.show[it.li]) out.push({ key: 'c' + k, d, note: it }); }
   return out;
 }
 // tekstens grenser i dens eget (roterte) koordinatsystem
@@ -803,7 +859,7 @@ function startTextDrag(e) {
   gest.type = 'tdrag'; gest.u0 = toUnit(gest.x0, gest.y0);
   if (!txtSet.has(e.key)) txtSelect(e.key, txtMulti || gest.mod);
   else txtSel = e.key;
-  gest.txts = selTexts().map(q => ({ q, o0: q.added ? { x: q.added.x, y: q.added.y } : (() => { const ed = txtStore().edits[q.key] || {}; return { x: ed.dx || 0, y: ed.dy || 0 }; })() }));
+  gest.txts = selTexts().map(q => ({ q, o0: q.note ? { x: q.d.x, y: q.d.y } : q.added ? { x: q.added.x, y: q.added.y } : (() => { const ed = txtStore().edits[q.key] || {}; return { x: ed.dx || 0, y: ed.dy || 0 }; })() }));
   updateEqBar();
   try { navigator.vibrate && navigator.vibrate(15); } catch (er) { }
   req();
@@ -811,7 +867,8 @@ function startTextDrag(e) {
 function moveText(p) {
   const u = toUnit(p.x, p.y), dx = u.x - gest.u0.x, dy = u.y - gest.u0.y, st = txtStore();
   for (const { q, o0 } of gest.txts) {
-    if (q.added) { q.added.x = o0.x + dx; q.added.y = o0.y + dy; }
+    if (q.note) setNoteWorld(q.note, { x: o0.x + dx, y: o0.y + dy });
+    else if (q.added) { q.added.x = o0.x + dx; q.added.y = o0.y + dy; }
     else { const ed = st.edits[q.key] || (st.edits[q.key] = {}); ed.dx = o0.x + dx; ed.dy = o0.y + dy; }
   }
   req();
@@ -825,6 +882,12 @@ function textAction(a) {
   if (a === 'tedit') { if (sel.length === 1) editTextDlg(sel[0]); return; }
   pushUndo();
   for (const e of sel) {
+    if (e.note) {
+      const n = notesMap()[e.note.key];
+      if (a === 'tdel') delete notesMap()[e.note.key];
+      else if (a === 'treset' && n) { delete n.lx; delete n.ly; }
+      continue;
+    }
     if (a === 'tdel') {
       if (e.added) st.added = st.added.filter(q => q !== e.added);
       else st.edits[e.key] = Object.assign(st.edits[e.key] || {}, { del: true });
@@ -842,7 +905,8 @@ function editTextDlg(e) {
       const v = inp.value;
       if (!v.trim()) return;
       pushUndo();
-      if (e.added) e.added.s = v;
+      if (e.note) notesMap()[e.note.key].s = v;
+      else if (e.added) e.added.s = v;
       else { const st = txtStore(); st.edits[e.key] = Object.assign(st.edits[e.key] || {}, { s: v }); }
       close(); save(); updateEqBar(); req();
     };
@@ -1153,6 +1217,11 @@ function eqChanges() {
     if (d) newBlocks.push({ name: d.name, ents: d.ents.map(libPairs) });
   }
   addedRaw.push(...kursExport(layer));
+  for (const k of Object.keys(P.eq.notes || {})) {
+    const it = itemByKey(k), d = it && noteDisp(it);
+    if (!d) continue;
+    addedRaw.push({ type: 'TEXT', pairs: [[100, 'AcDbEntity'], [8, noteLayer(it)], [100, 'AcDbText'], [10, f(d.x)], [20, f(-d.y)], [30, '0'], [40, f(d.h)], [1, d.s], [72, '1'], [11, f(d.x)], [21, f(-d.y)], [31, '0'], [100, 'AcDbText'], [73, '2']] });
+  }
   for (const a of txtStore().added) {
     const lines = a.s.split('\n'), ls = 1.66 * a.h;
     lines.forEach((ln, i) => addedRaw.push({ type: 'TEXT', pairs: [[100, 'AcDbEntity'], [8, a.layer], [100, 'AcDbText'], [10, f(a.x)], [20, f(-(a.y + i * ls))], [30, '0'], [40, f(a.h)], [1, ln], [100, 'AcDbText']] }));
