@@ -67,6 +67,18 @@ function moveToGap(p) {
   const AX = axis === 'x' ? 'X' : 'Y';
   const sideTxt = s => s ? SIDE_TXT[s] : 'ingen vegg';
   const nr = P.points.indexOf(p) + 1;
+  // nabomål (c/c) langs flytteretningen, før og etter
+  const nbOf = (px, py) => {
+    const tol = 1 / (P.mmPerUnit || 1), o = {};
+    for (const r of P.points) {
+      if (r === p) continue;
+      if (axis === 'x' && Math.abs(r.y - py) < tol) { if (r.x < px && (!o.a || r.x > o.a.x)) o.a = r; if (r.x > px && (!o.b || r.x < o.b.x)) o.b = r; }
+      if (axis === 'y' && Math.abs(r.x - px) < tol) { if (r.y < py && (!o.a || r.y > o.a.y)) o.a = r; if (r.y > py && (!o.b || r.y < o.b.y)) o.b = r; }
+    }
+    return o;
+  };
+  const nb0 = nbOf(p.x, p.y), cA = (q, v) => q ? mm(Math.abs((axis === 'x' ? q.x : q.y) - v)) : null;
+  const ccTxt = ['a', 'b'].filter(s => nb0[s]).map(s => `${cA(nb0[s], axis === 'x' ? p.x : p.y)} → <b>${cA(nb0[s], axis === 'x' ? nx : ny)}</b> mm til punkt #${P.points.indexOf(nb0[s]) + 1}`).join('<br>');
   joistPrev = { id: p.id, x: nx, y: ny };
   bringIntoView([p, { x: nx, y: ny }, ...(sideq ? [dimEnd(q, sideq)] : [])]);
   req();
@@ -76,14 +88,15 @@ function moveToGap(p) {
   dialog(`<h2>Flytt mellom bjelker</h2>
     <p>Punkt #${nr} flyttes ${moveMm} mm ${dirTxt}, midt mellom to bjelker. Ny plassering vises stiplet i tegningen.</p>
     <p>${change}</p>
-    ${locked ? `<p class="warnbox" id="jLock">${AX}-målet er <b>låst</b> (skrevet inn som ${oldV} mm ${sideTxt(side)}). Flytter du, blir det låste målet ${newV} mm. Låsen beholdes med den nye verdien.</p>` : ''}
-    <div class="btns"><button data-x>Avbryt</button><button class="primary" data-ok>${locked ? 'Flytt og endre låst mål' : 'Flytt'}</button></div>`, (el, close) => {
+    ${ccTxt ? `<p>c/c til naboene i raden:<br>${ccTxt}<br><small>De andre punktene flyttes ikke.</small></p>` : ''}
+    ${locked ? `<p class="warnbox" id="jLock">${AX}-målet er <b>${lockTxt(side)}</b>. Flytter du, endres avstanden fra ${oldV} til ${newV} mm. Referanseveggen er fortsatt låst.</p>` : ''}
+    <div class="btns"><button data-x>Avbryt</button><button class="primary" data-ok>${locked ? `Flytt (${AX} blir ${newV} mm)` : 'Flytt'}</button></div>`, (el, close) => {
     $('[data-x]', el).onclick = close;
     $('[data-ok]', el).onclick = () => {
       pushUndo();
       p.x = nx; p.y = ny; p._d = null;
       close(); save(); req();
-      toast(`Flyttet ${moveMm} mm` + (locked ? ` · låst ${AX}-mål nå ${newV} mm` : ''));
+      toast(`Flyttet ${moveMm} mm` + (locked ? ` · ${AX} nå ${newV} mm, ${lockTxt(side)}` : ''));
     };
   }, { low: true, onClose: () => { joistPrev = null; req(); } });
 }

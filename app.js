@@ -339,6 +339,7 @@ function dimEnd(p, side) {
   if (v == null) return { x: p.x, y: p.y };
   return { x: p.x + (side === 'L' ? -v : side === 'R' ? v : 0), y: p.y + (side === 'U' ? -v : side === 'D' ? v : 0) };
 }
+const lockTxt = s => 'låst til ' + SIDE_TXT[s].replace(/^fra /, '');
 let dimFocus = null; // { id, axis, side } – målet som redigeres, fremheves i tegningen
 function dimsOf(p) {
   if (p._d) return p._d;
@@ -460,7 +461,7 @@ function drawOverlay(ctx, v, o) {
     ctx.setLineDash([]);
     const sp = dragPt || (selId && pts.find(q => q.id === selId));
     if (sp && P.mmPerUnit) drawSpacing(ctx, v, sp, o);
-  }
+  } else if (P.mmPerUnit && (typeof expDims !== 'function' || expDims())) for (const q of pts) drawSpacing(ctx, v, q, o, ['R', 'D']);
   pts.forEach((p, i) => {
     const sx = p.x * v.s + v.tx, sy = p.y * v.s + v.ty;
     drawSym(ctx, p, sx, sy, 11 * k, !o.export && p.id === selId, i + 1, k);
@@ -528,10 +529,10 @@ function drawDims(ctx, v, p, o) {
     ctx.restore();
   }
 }
-function drawSpacing(ctx, v, p, o) {
+function drawSpacing(ctx, v, p, o, sides) {
   const nb = neighbors(p), k = o.k || 1, off = 24 * k, col = '#0d9488';
   const sx = p.x * v.s + v.tx, sy = p.y * v.s + v.ty;
-  for (const side of ['L', 'R', 'U', 'D']) {
+  for (const side of sides || ['L', 'R', 'U', 'D']) {
     const q = nb[side];
     if (!q) continue;
     const qx = q.x * v.s + v.tx, qy = q.y * v.s + v.ty;
@@ -843,8 +844,8 @@ function updatePanel() {
   const p = P.points[i], d = dimsOf(p);
   $('#selTitle').textContent = `#${i + 1} ${(TYPES[p.type] || TYPES.downlight).name}`;
   const xv = d.xs ? fmt(dist(d, d.xs)) : '–', yv = d.ys ? fmt(dist(d, d.ys)) : '–';
-  const xs = d.xs ? `${SIDE_ARW[d.xs]} ${SIDE_TXT[d.xs]} · ${p.lockX ? 'låst' : 'beregnet'}` : 'ingen vegg funnet';
-  const ys = d.ys ? `${SIDE_ARW[d.ys]} ${SIDE_TXT[d.ys]} · ${p.lockY ? 'låst' : 'beregnet'}` : 'ingen vegg funnet';
+  const xs = d.xs ? `${SIDE_ARW[d.xs]} ${p.lockX ? lockTxt(d.xs) : SIDE_TXT[d.xs] + ' · beregnet'}` : 'ingen vegg funnet';
+  const ys = d.ys ? `${SIDE_ARW[d.ys]} ${p.lockY ? lockTxt(d.ys) : SIDE_TXT[d.ys] + ' · beregnet'}` : 'ingen vegg funnet';
   if ($('#selXv').textContent !== xv) $('#selXv').textContent = xv;
   if ($('#selYv').textContent !== yv) $('#selYv').textContent = yv;
   if ($('#selXs').textContent !== xs) $('#selXs').textContent = xs;
@@ -956,7 +957,7 @@ function editDim(p, axis) {
   bringIntoView([p, dimEnd(p, side)]);
   req();
   dialog(`<h2>${axis === 'x' ? 'X-mål ↔' : 'Y-mål ↕'} – punkt ${P.points.indexOf(p) + 1}</h2>
-    <p>${(axis === 'x' ? p.lockX : p.lockY) ? 'Låst mål (skrevet inn). Vises med hel linje og hengelås i tegningen.' : 'Beregnet mot nærmeste vegg (stiplet linje). Skriv inn et mål for å låse det.'}</p>
+    <p>${(axis === 'x' ? p.lockX : p.lockY) ? `Referansevegg låst: målet tas alltid ${SIDE_TXT[axis === 'x' ? p.lockX : p.lockY]} (hel linje og hengelås). Avstanden endres hvis punktet flyttes.` : 'Beregnet mot nærmeste vegg (stiplet linje). Skriv inn et mål for å låse referanseveggen.'}</p>
     <div class="seg">${btn(sides[0])}${btn(sides[1])}</div>
     <label class="f">Avstand i mm</label>
     <input id="dIn" class="bigin" inputmode="decimal" autocomplete="off">

@@ -356,16 +356,31 @@ function pdfContent(L) {
         if (!side) continue;
         const dd = dist(d, side), sx = side === 'L' ? -1 : side === 'R' ? 1 : 0, sy = side === 'U' ? -1 : side === 'D' ? 1 : 0;
         const ex = p.x + sx * dd, ey = p.y + sy * dd;
-        pen.stroke(col, 0.3, [2, 1.5]); pen.lines([[p.x, p.y, ex, ey]]);
+        const locked = (side === d.xs ? p.lockX : p.lockY) === side;
+        pen.stroke(col, locked ? 0.4 : 0.3, locked ? undefined : [2, 1.5]); pen.lines([[p.x, p.y, ex, ey]]);
         const t = 1.5 / pen.k * MM;
         pen.stroke(col, 0.4); pen.lines([sx ? [ex, ey - t, ex, ey + t] : [ex - t, ey, ex + t, ey]]);
-        pen.label(col, (p.x + ex) / 2, (p.y + ey) / 2, 6.5, fmt(dd));
+        pen.label(col, (p.x + ex) / 2, (p.y + ey) / 2, 6.5, (locked ? 'L ' : '') + fmt(dd));
+      }
+    }
+    // c/c til nabopunkt på samme linje, så en flyttet rad ikke ser jevn ut på papiret
+    const cc = '#0d9488', off = 4 / pen.k * MM, t = 1.2 / pen.k * MM;
+    for (const p of P.points) {
+      const nb = neighbors(p);
+      for (const side of ['R', 'D']) {
+        const q = nb[side];
+        if (!q) continue;
+        const h = side === 'R';
+        const ax = h ? p.x : p.x - off, ay = h ? p.y - off : p.y, bx = h ? q.x : q.x - off, by = h ? q.y - off : q.y;
+        pen.stroke(cc, 0.3); pen.lines([[ax, ay, bx, by], h ? [ax, ay - t, ax, ay + t] : [ax - t, ay, ax + t, ay], h ? [bx, by - t, bx, by + t] : [bx - t, by, bx + t, by]]);
+        pen.label(cc, (ax + bx) / 2, (ay + by) / 2, 6, 'c/c ' + fmt(h ? Math.abs(q.x - p.x) : Math.abs(q.y - p.y)));
       }
     }
   }
   pen.ops.push('Q');
   pen.ops.push(`0.6 0.6 0.6 RG 0.3 w [] 0 d ${pen.n(L.m * MM)} ${pen.n(L.m * MM)} ${pen.n(L.aw * MM)} ${pen.n((L.ah + L.foot) * MM)} re S`);
-  pen.ops.push(titleBlock(L, expDims() ? 'Takpunkter – mål i mm til vegg' : 'Installasjonstegning'));
+  const anyLock = P.points.some(q => q.lockX || q.lockY);
+  pen.ops.push(titleBlock(L, expDims() ? 'Takpunkter – mål i mm til vegg' + (anyLock ? ' (L = låst vegg)' : '') : 'Installasjonstegning'));
   return pen.ops.join('\n');
 }
 

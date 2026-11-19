@@ -33,8 +33,49 @@ function ptItems() {
   const like = doc.r.inserts.find(i => doc.eqIns[i.idx] && /lys|light/i.test(i.block) && !/vegg/i.test(i.block));
   const layer = like ? like.layer : (doc.r.layers.find((l, i) => doc.equip[i]) || { name: '0' }).name;
   const li = Math.max(0, layerIndex(layer));
-  return P.points.map(p => ({ key: 'p' + p.id, pt: p, isPt: true, block: PT_BLOCK[p.type] || 'E_DOWNLIGHT', layer, li,
+  return P.points.filter(p => !linkedItem(p)).map(p => ({ key: 'p' + p.id, pt: p, isPt: true, block: PT_BLOCK[p.type] || 'E_DOWNLIGHT', layer, li,
     x: p.x, y: p.y, r: 0, ox: p.x, oy: p.y, or: 0, sx: 1, sy: 1, labels: [], n: 1, n0: 1, added: true, del: false, numLabel: null }));
+}
+// Prosjektert lys brukt som takpunkt: ett fysisk lys = ett symbol i Utstyr og ett hull i Takpunkter
+function linkedItem(p) {
+  if (!p.link) return null;
+  const it = EQ.items.find(q => q.key === p.link);
+  return it && !it.del ? it : null;
+}
+function linkedPt(it) { return it && !it.isPt && P.points.find(p => p.link === it.key && !it.del) || null; }
+function isLightBlock(b) { return /lys|light|lampe|spot|down/i.test(b) && !/vegg/i.test(b); }
+function ptTypeFor(b) { return /spot/i.test(b) ? 'spot' : /down/i.test(b) ? 'downlight' : 'lampe'; }
+// symbolet følger takpunktet (punktet er det som er målt opp)
+function syncLinks() {
+  if (!P || !P.points || !EQ.items.length) return;
+  for (const p of P.points) {
+    const it = linkedItem(p);
+    if (!it) continue;
+    const c = itemCenter(it);
+    const dx = p.x - c.x, dy = p.y - c.y;
+    if (Math.abs(dx) > 1e-6 || Math.abs(dy) > 1e-6) { it.x += dx; it.y += dy; commitItem(it); }
+  }
+}
+function useAsPoint(it) {
+  const c = itemCenter(it), mpu = P.mmPerUnit || 1;
+  const near = P.points.filter(p => !linkedItem(p)).map(p => ({ p, d: Math.hypot(p.x - c.x, p.y - c.y) * mpu })).filter(o => o.d < 400).sort((a, b) => a.d - b.d)[0];
+  const make = () => {
+    pushUndo();
+    const p = { id: uid(), type: ptTypeFor(it.block), x: c.x, y: c.y, lockX: null, lockY: null, link: it.key };
+    P.points.push(p); save(); updateEqBar(); updateTitle(); req();
+    toast('Takpunkt lagt til – samme lys, mål i Takpunkter');
+  };
+  if (!near) return make();
+  dialog(`<h2>Bruk som takpunkt</h2>
+    <p>Det finnes allerede et takpunkt ${Math.round(near.d)} mm unna. Er det samme lys?</p>
+    <div class="btns" style="flex-direction:column;align-items:stretch">
+      <button class="primary" data-l>Ja, koble til det (lyset flyttes til punktet)</button>
+      <button data-n>Nei, lag et nytt takpunkt her</button>
+      <button data-x>Avbryt</button></div>`, (el, close) => {
+    $('[data-x]', el).onclick = close;
+    $('[data-n]', el).onclick = () => { close(); make(); };
+    $('[data-l]', el).onclick = () => { close(); pushUndo(); near.p.link = it.key; syncLinks(); save(); updateEqBar(); updateTitle(); req(); toast('Koblet: ett lys, ett takpunkt'); };
+  });
 }
 function allItems() { return eqActive() || (doc && doc.kind === 'dxf') ? EQ.items.concat(ptItems()) : EQ.items; }
 const f6 = v => String(Math.round(v * 1e6) / 1e6);
@@ -190,6 +231,7 @@ function placeItem(it, ux, uy) {
   it.snap = w.k;
 }
 function commitItem(it) {
+  if (!it.isPt && P.points) { const lp = P.points.find(p => p.link === it.key); if (lp && !it.del) { const c = itemCenter(it); if (lp.x !== c.x || lp.y !== c.y) { lp.x = c.x; lp.y = c.y; lp._d = null; } } }
   if (it.added) {
     const a = P.eq.added.find(q => q.id === it.id);
     if (a) Object.assign(a, { x: it.x, y: it.y, r: it.r, n: it.n, stackOn: it.stackOn || undefined });
@@ -211,6 +253,7 @@ function drawBlock(ctx, v, dpr, g, x, y, r, sx, sy, col, alpha, k) {
   ctx.restore();
 }
 function drawEquip(ctx, v, dpr, o, W, H) {
+  syncLinks();
   const L = doc.r.layers, k = o.k || 1;
   const showChg = !o.export && S.showChg !== false && edMode === 'utstyr';
   drawKursHl(ctx, v, dpr, o);
@@ -454,11 +497,20 @@ function moveItemDrag(p) {
   let target = null;
   if (infoOf(it.block).wall) {
     const sx = p.x + gest.off.x, sy = p.y + gest.off.y;
+    // hvilken side av veggen symbolet vil havne på – aldri stable med et symbol på den andre siden
+    const me = { block: it.block, r: it.r, sx: it.sx, sy: it.sy, tmpl: it.tmpl };
+    placeItem(me, (sx - view.tx) / view.s, (sy - view.ty) / view.s);
+    const sameSide = q => {
+      if (!me._wn) return true;
+      const t = { block: q.block, r: q.r, sx: q.sx, sy: q.sy, tmpl: q.tmpl };
+      placeItem(t, q.x, q.y);
+      return !t._wn || me._wn.nx * t._wn.nx + me._wn.ny * t._wn.ny > 0.3;
+    };
     let bd = gest.stackTo ? STACK_KEEP : STACK_PX;
     for (const q of EQ.items) {
       if (q === it || q.del || gest.chain.has(q.key) || !infoOf(q.block).wall || !doc.show[q.li]) continue;
       const c = { x: q.x * view.s + view.tx, y: q.y * view.s + view.ty }, d = Math.hypot(c.x - sx, c.y - sy);
-      if (d < bd) { bd = d; target = q; }
+      if (d < bd && sameSide(q)) { bd = d; target = q; }
     }
   }
   if (target) {
@@ -613,10 +665,12 @@ function updateEqBar() {
       acts = pb + nb + kb + abtn('del', 'del', 'Slett', 'dz');
     } else {
       title = cap(prettyBlock(it.block)) + (countable(it.block) ? `, ${it.n} uttak` : '');
-      sub = [room, kt, it.added ? 'lagt til' : isMoved(it) ? 'flyttet' : 'som prosjektert', inStack(it) ? 'i stabel' : ''].filter(Boolean).join(' · ');
+      const lp = linkedPt(it);
+      sub = [room, kt, it.added ? 'lagt til' : isMoved(it) ? 'flyttet' : 'som prosjektert', inStack(it) ? 'i stabel' : '', lp ? 'takpunkt #' + (P.points.indexOf(lp) + 1) : ''].filter(Boolean).join(' · ');
       acts = pb + nb
         + (countable(it.block) ? abtn('n', `<b>${it.n}×</b>`, 'Uttak') : '') + kb
         + (inStack(it) ? abtn('swap', 'swap', 'Bytt i stabel') : abtn('rot', 'rot', 'Roter') + abtn('flip', 'flip', 'Snu'))
+        + (!infoOf(it.block).wall && isLightBlock(it.block) && !linkedPt(it) ? abtn('aspt', '<svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>', 'Bruk som takpunkt') : '')
         + abtn('dup', 'dup', 'Kopier')
         + (isMoved(it) ? abtn('reset', 'reset', 'Prosjektert') : '')
         + abtn('del', 'del', 'Slett', 'dz');
@@ -665,6 +719,7 @@ function eqAction(a) {
   if (a === 'kurs') { editKurs(it.key); return; }
   if (a === 'note') { noteDlg(it); return; }
   if (a === 'photo') { openPhotos(it.key, it.isPt ? (TYPES[it.pt.type] || TYPES.downlight).name : cap(prettyBlock(it.block))); return; }
+  if (a === 'aspt') { useAsPoint(it); return; }
   if (it.isPt) {
     if (a === 'del') { pushUndo(); P.points = P.points.filter(q => q !== it.pt); eqSel = null; save(); updateEqBar(); updateTitle(); req(); }
     return;
@@ -704,6 +759,8 @@ function eqAction(a) {
     if (inStack(it)) { unstack(it); commitAll(); }
     if (it.added) { P.eq.added = P.eq.added.filter(q => q.id !== it.id); EQ.items = EQ.items.filter(q => q !== it); }
     else it.del = true;
+    const lp = P.points.find(p => p.link === it.key);
+    if (lp) { P.points = P.points.filter(p => p !== lp); toast('Lyset og takpunktet er slettet'); }
     eqSel = null;
   }
   if (a !== 'dup' && EQ.items.includes(it)) commitItem(it);
