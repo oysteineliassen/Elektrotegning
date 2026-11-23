@@ -176,10 +176,17 @@ class DxfDoc {
     this.eqIns = new Uint8Array(r.inserts.length);
     r.inserts.forEach(ins => { this.eqIns[ins.idx] = this.equip[ins.li]; });
     const sg = r.segs, isEq = k => sg.ins[k] >= 0 && this.eqIns[sg.ins[k]];
+    // ramme rundt plantegningen: alt utenfor ignoreres (visning, vegger, utskrift)
+    this.fullBounds = this.fullBounds || this.bounds;
+    const F = P.frame;
+    this.bounds = F ? { x0: F.x0, y0: F.y0, x1: F.x1, y1: F.y1 } : this.fullBounds;
+    const inF = (x, y) => !F || (x >= F.x0 && x <= F.x1 && y >= F.y0 && y <= F.y1);
+    this.segIn = k => inF((sg.x1[k] + sg.x2[k]) / 2, (sg.y1[k] + sg.y2[k]) / 2);
+    this.fillIn = f => !F || f.loops.some(lp => lp.some(q => inF(q[0], q[1])));
     this.paths = L.map(() => new Path2D());
     const wk = [];
     for (let k = 0; k < sg.n; k++) {
-      if (isEq(k)) continue;
+      if (isEq(k) || !this.segIn(k)) continue;
       const p = this.paths[sg.l[k]];
       p.moveTo(sg.x1[k], sg.y1[k]); p.lineTo(sg.x2[k], sg.y2[k]);
       if (this.wall[sg.l[k]]) wk.push(k);
@@ -187,11 +194,11 @@ class DxfDoc {
     this.wallIdx = Int32Array.from(wk);
     this.fillPaths = L.map(() => null);
     for (const f of r.fills) {
-      if (f.ins >= 0 && this.eqIns[f.ins]) continue;
+      if ((f.ins >= 0 && this.eqIns[f.ins]) || !this.fillIn(f)) continue;
       const p = this.fillPaths[f.l] || (this.fillPaths[f.l] = new Path2D());
       for (const lp of f.loops) { lp.forEach((q, i) => i ? p.lineTo(q[0], q[1]) : p.moveTo(q[0], q[1])); p.closePath(); }
     }
-    this.texts = r.texts.filter(t => !(t.ins >= 0 && this.eqIns[t.ins]));
+    this.texts = r.texts.filter(t => !(t.ins >= 0 && this.eqIns[t.ins]) && inF(t.x, t.y));
   }
   geom(name) {
     let g = this.gcache.get(name);
@@ -432,6 +439,7 @@ function draw() {
   if (edMode === 'mal' || doc.kind !== 'dxf') drawOverlay(ctx, view, { main: true, k: S.sym });
   if (typeof drawPalDrag === 'function') drawPalDrag(ctx);
   if (typeof drawDragFx === 'function') drawDragFx(ctx);
+  drawFrameDraft(ctx);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (dragPt) drawLoupe(ctx, dragPt, true);
   else if (gest && gest.type === 'idrag') drawLoupe(ctx, gest.item, false);
@@ -613,7 +621,7 @@ function drawLoupe(ctx, tgt, isPoint) {
   ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.clip();
   ctx.fillStyle = '#fff'; ctx.fillRect(cx - R, cy - R, 2 * R, 2 * R);
   doc.draw(ctx, lv, dpr, { main: false, k: 1, loupe: true });
-  if (!isPoint && tgt.key === 'drag') drawBlock(ctx, lv, dpr, doc.geom(tgt.block), tgt.x, tgt.y, tgt.r, tgt.sx, tgt.sy, aci(doc.r.layers[tgt.li].color), 0.85, 1);
+  if (!isPoint && tgt.key === 'drag') drawBlock(ctx, lv, dpr, typeof gname === 'function' ? doc.geom(gname(tgt)) : doc.geom(tgt.block), tgt.x, tgt.y, tgt.r, tgt.sx, tgt.sy, aci(doc.r.layers[tgt.li].color), 0.85, 1);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (isPoint) drawDims(ctx, lv, tgt, { k: 0.9 });
   ctx.strokeStyle = 'rgba(234,88,12,.9)'; ctx.lineWidth = 1;
@@ -628,6 +636,52 @@ function drawLoupe(ctx, tgt, isPoint) {
 /* ---------------- Visning ---------------- */
 function toScreen(u) { return { x: u.x * view.s + view.tx, y: u.y * view.s + view.ty }; }
 function toUnit(x, y) { return { x: (x - view.tx) / view.s, y: (y - view.ty) / view.s }; }
+/* ---------- Ramme rundt plantegningen ---------- */
+let frameDraft = null;
+function startFrame() {
+  mode = 'frame'; frameDraft = null; select(null);
+  if (typeof eqSel !== 'undefined') { eqSel = null; eqSet.clear(); updateEqBar(); }
+  if (P.frame) { P.frame = null; doc.applyLayers(P); fitView(); } // vis hele tegningen mens rammen tegnes
+  setBanner('<b>Ramme rundt plantegningen</b><small>Dra med én finger rundt den delen du skal bruke. To fingre flytter tegningen.</small>', 'Avbryt', endFrame, true);
+  req();
+}
+function frameDrawn() {
+  const r = frameRect();
+  if (!r) return;
+  setBanner('<b>Ramme valgt</b><small>Dra på nytt for å endre, eller bruk rammen</small>', 'Bruk rammen', () => {
+    pushUndo();
+    P.frame = frameRect(); frameDraft = null; mode = 'edit';
+    doc.applyLayers(P); if (typeof eqInit === 'function') eqInit(); invalidateDims();
+    setBanner(null); save(); fitView(); updateTitle();
+    toast('Bare plantegningen innenfor rammen brukes');
+  }, true);
+  req();
+}
+function frameRect() {
+  if (!frameDraft) return null;
+  const { a, b } = frameDraft;
+  const r = { x0: Math.min(a.x, b.x), y0: Math.min(a.y, b.y), x1: Math.max(a.x, b.x), y1: Math.max(a.y, b.y) };
+  return (r.x1 - r.x0) * view.s > 30 && (r.y1 - r.y0) * view.s > 30 ? r : null;
+}
+function endFrame() {
+  frameDraft = null; mode = 'edit'; setBanner(null);
+  doc.applyLayers(P); fitView(); req();
+}
+function removeFrame() {
+  pushUndo(); P.frame = null; doc.applyLayers(P); if (typeof eqInit === 'function') eqInit(); invalidateDims(); save(); fitView(); toast('Hele tegningen vises igjen');
+}
+function drawFrameDraft(ctx) {
+  if (mode !== 'frame') return;
+  ctx.save(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const r = frameDraft && { x0: Math.min(frameDraft.a.x, frameDraft.b.x), y0: Math.min(frameDraft.a.y, frameDraft.b.y), x1: Math.max(frameDraft.a.x, frameDraft.b.x), y1: Math.max(frameDraft.a.y, frameDraft.b.y) };
+  ctx.fillStyle = 'rgba(17,24,39,.35)';
+  if (r) {
+    const X0 = r.x0 * view.s + view.tx, Y0 = r.y0 * view.s + view.ty, X1 = r.x1 * view.s + view.tx, Y1 = r.y1 * view.s + view.ty;
+    ctx.beginPath(); ctx.rect(0, 0, cw, ch); ctx.rect(X0, Y0, X1 - X0, Y1 - Y0); ctx.fill('evenodd');
+    ctx.strokeStyle = '#f97316'; ctx.lineWidth = 3; ctx.setLineDash([8, 5]); ctx.strokeRect(X0, Y0, X1 - X0, Y1 - Y0);
+  } else ctx.fillRect(0, 0, cw, ch);
+  ctx.restore();
+}
 function fitS() { const b = doc.bounds; return Math.min(cw / (b.x1 - b.x0), ch / (b.y1 - b.y0)) * 0.94; }
 function fitView() {
   if (!doc) return;
@@ -684,6 +738,8 @@ cv.addEventListener('pointerdown', e => {
   const p = pos(e);
   ptrs.set(e.pointerId, p);
   if (ptrs.size === 1 && eqActive() && mode === 'edit') {
+    const hv = eqTool === 'sel' && typeof hitAreaHandle === 'function' ? hitAreaHandle(p.x, p.y) : null;
+    if (hv) { gest = { type: 'pending', x0: p.x, y0: p.y, hv, v0: { ...view } }; return; }
     const ht = eqTool === 'text' ? hitText(p.x, p.y) : null;
     const hk = eqTool === 'sel' ? hitKurs(p.x, p.y) : null;
     const hi = hk || eqTool === 'text' ? null : hitItem(p.x, p.y);
@@ -728,10 +784,16 @@ cv.addEventListener('pointermove', e => {
     else if (gest.hi) startItemDrag(gest.hi, gest.x0, gest.y0);
     else startDrag(gest.hp, gest.x0, gest.y0);
   }
+  if (gest.type === 'pending' && gest.hv && Math.hypot(p.x - gest.x0, p.y - gest.y0) > 4) { pushUndo(); gest.type = 'vdrag'; }
+  if (gest.type === 'vdrag') { areaVertexDrag(gest.hv, p); return; }
+  if (gest.type === 'pending' && mode === 'frame' && Math.hypot(p.x - gest.x0, p.y - gest.y0) > 6) {
+    gest.type = 'frect'; frameDraft = { a: toUnit(gest.x0, gest.y0), b: toUnit(p.x, p.y) };
+  }
   if (gest.type === 'pending' && Math.hypot(p.x - gest.x0, p.y - gest.y0) > 9) {
     clearTimeout(lpTimer);
     gest.type = 'pan';
   }
+  if (gest.type === 'frect') { frameDraft.b = toUnit(p.x, p.y); req(); return; }
   if (gest.type === 'pan') {
     view.tx = gest.v0.tx + (p.x - gest.x0); view.ty = gest.v0.ty + (p.y - gest.y0);
     req();
@@ -758,13 +820,16 @@ function ptrEnd(e) {
   ptrs.delete(e.pointerId);
   clearTimeout(lpTimer);
   if (!gest) return;
-  if (gest.type === 'pending' && e.type === 'pointerup') onTap(gest.x0, gest.y0, gest);
+  if (gest.type === 'pending' && e.type === 'pointerup' && gest.hv) areaHandleTap(gest.hv);
+  else if (gest.type === 'vdrag') { save(); updateEqBar(); }
+  else if (gest.type === 'pending' && e.type === 'pointerup') onTap(gest.x0, gest.y0, gest);
   else if (gest.type === 'drag') endDrag();
   else if (gest.type === 'idrag') endItemDrag();
   else if (gest.type === 'kdrag') save();
   else if (gest.type === 'tdrag') endTextDrag();
   else if (gest.type === 'gdrag') endGroupDrag();
   else if (gest.type === 'box') boxSelect(gest);
+  else if (gest.type === 'frect') frameDrawn();
   else if (gest.type === 'pinch' && ptrs.size === 1) {
     const [p] = [...ptrs.values()];
     gest = { type: 'pan', x0: p.x, y0: p.y, v0: { ...view } };
@@ -1269,7 +1334,7 @@ function openMenu() {
     <button data-a="exp">Del tegning (PDF${isPdf ? '' : ', DXF'} eller bilde)</button>
     <button data-a="bak">Sikkerhetskopi av prosjekt med bilder</button>
     <div class="mh">Tegning</div>
-    ${isPdf ? '<button data-a="scale">Målestokk / kalibrer</button>' : '<button data-a="layers">Lag og vegger</button>'}
+    ${isPdf ? '<button data-a="scale">Målestokk / kalibrer</button>' : '<button data-a="layers">Lag og vegger</button><button data-a="frame">' + (P.frame ? 'Endre ramme rundt plantegningen' : 'Ramme rundt plantegningen') + '</button>' + (P.frame ? '<button data-a="noframe">Fjern rammen (vis hele tegningen)</button>' : '')}
     ${eq ? '' : '<button data-a="joist">Bjelkelag</button>'}
     <button data-a="set">Innstillinger</button>
     <div class="mh">&nbsp;</div>
@@ -1288,6 +1353,8 @@ function openMenu() {
       else if (a === 'set') openSettings();
       else if (a === 'scale') askScale();
       else if (a === 'layers') openLayers();
+      else if (a === 'frame') startFrame();
+      else if (a === 'noframe') removeFrame();
       else if (a === 'exp') openExport();
       else if (a === 'bak') exportBackup(P);
       else if (a === 'ren') promptDlg('Gi nytt navn', 'Navn', P.name, v => { P.name = v; updateTitle(); save(); });
@@ -1477,8 +1544,10 @@ function backStep() {
   if (mode === 'row') { endRow(); return true; }
   if (mode === 'calib') { $('#bannerBtn').click(); return true; }
   if (mode === 'joist') { $('#bannerBtn').click(); return true; }
+  if (mode === 'frame') { endFrame(); return true; }
   if (eq && eqTool === 'run') { if (runSel) { runSel = null; updateEqBar(); req(); } else setRunTool(false); updToolsBtn(); return true; }
   if (eq && eqTool === 'text') { if (txtSel) { txtClear(); txtMulti = false; updateEqBar(); req(); } else setTextTool(false); updToolsBtn(); return true; }
+  if (eq && typeof areaSel !== 'undefined' && areaSel) { areaSel = null; updateEqBar(); req(); return true; }
   if (eq && (eqSet.size || eqSel || runSel)) { eqSet.clear(); eqSel = null; runSel = null; updateEqBar(); req(); return true; }
   if (eq && eqArm) { setArm(null); return true; }
   if (selId) { select(null); return true; }

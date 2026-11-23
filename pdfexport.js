@@ -280,7 +280,7 @@ function pdfContent(L) {
   // fyll
   const fills = new Map();
   for (const f of r.fills) {
-    if (!doc.show[f.l] || (f.ins >= 0 && doc.eqIns[f.ins])) continue;
+    if (!doc.show[f.l] || (f.ins >= 0 && doc.eqIns[f.ins]) || (doc.fillIn && !doc.fillIn(f))) continue;
     if (!fills.has(f.l)) fills.set(f.l, []);
     fills.get(f.l).push(...f.loops);
   }
@@ -292,10 +292,15 @@ function pdfContent(L) {
     else for (const c of joistCentersIn(a.y0 - hw, a.y1 + hw)) loops.push([[a.x0, c - hw], [a.x1, c - hw], [a.x1, c + hw], [a.x0, c + hw]]);
     pen.fill('#f6dfc0', loops);
   }
+  // varmekabelfelt (installasjonstegning)
+  if (!expDims() && typeof vkAreas === 'function') for (const a of vkAreas()) {
+    pen.stroke('#b91c1c', 0.35, [3, 2]); pen.poly(a.pts.concat([a.pts[0]]).map(q => ({ x: q[0], y: q[1] })));
+    const c = polyCentroid(a.pts); pen.label('#b91c1c', c.x, c.y, 7, `${a.label} · ${vkM2Txt(a)} m²`);
+  }
   // linjer per lag
   const byL = Ls.map(() => []);
   const sg = r.segs;
-  for (let k = 0; k < sg.n; k++) { if (!doc.show[sg.l[k]] || isEq(k)) continue; byL[sg.l[k]].push([sg.x1[k], sg.y1[k], sg.x2[k], sg.y2[k]]); }
+  for (let k = 0; k < sg.n; k++) { if (!doc.show[sg.l[k]] || isEq(k) || (doc.segIn && !doc.segIn(k))) continue; byL[sg.l[k]].push([sg.x1[k], sg.y1[k], sg.x2[k], sg.y2[k]]); }
   byL.forEach((segs, i) => { if (!segs.length) return; pen.stroke(doc.wall[i] ? '#000000' : aci(Ls[i].color), doc.wall[i] ? 0.5 : 0.25); pen.lines(segs); });
   // tekst
   for (const t0 of doc.texts) {
@@ -321,7 +326,7 @@ function pdfContent(L) {
   // utstyr + takpunkter som blokker
   for (const it of allItems()) {
     if (it.del || !doc.show[it.li]) continue;
-    const g = doc.geom(it.block);
+    const g = igeom(it);
     if (!g) continue;
     const col = aci(Ls[it.li].color), T = itemXf(it);
     if (g.fills && g.fills.length) pen.fill(col, g.fills.flatMap(f => f.loops.map(lp => lp.map(q => T(q[0], q[1])))));

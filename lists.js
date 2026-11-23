@@ -77,6 +77,7 @@ function materialList() {
   if (doc.kind === 'dxf') {
     const L = runLength();
     if (L > 0) out.push({ name: 'Føringer skjult anlegg (ca. lengde mellom punkter)', n: L.toFixed(1).replace('.', ','), unit: 'm' });
+    if (typeof vkAreas === 'function') for (const a of vkAreas()) out.push({ name: `Varmekabel ${a.label} (gulvareal)`, n: vkM2Txt(a), unit: 'm²' });
   }
   return out;
 }

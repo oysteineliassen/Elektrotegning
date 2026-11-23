@@ -36,3 +36,6 @@ DWG: lagre som DXF i AutoCAD LT først.
 - **Åpne fra e-post/Filer**: på Android kan PDF/DXF deles til appen («Del» → Elektrotegning); på PC kan filer åpnes med appen.
 - **Telefon**: føring, tekst og vis-endringer ligger bak 🛠 så paletten får plass. **PC**: Shift + dra i tomt område velger flere symboler (eller tekster), og de kan flyttes/slettes samlet.
 - **Synk** fletter nå endringer per punkt/symbol/føring/tekst når samme prosjekt er endret på to enheter.
+- **Symboler i grupper**: Stikk, Data, Bryter, Lys, Varme, Signal og Annet. Knappen viser sist brukte variant; pilen (eller hold inne) viser alle. Veggsymboler har ring for skjult anlegg innerst ved veggen (ikke når symbolet står i en stabel).
+- **Ramme rundt plantegningen** (meny → Tegning): bare det innenfor rammen vises, brukes til vegger og skrives ut. DXF-eksporten beholder hele fila.
+- **Varmekabel** (Varme → Varmekabel): trykk i rommet, så følger feltet veggene 100 mm innenfor, også i rom som ikke er firkantet. Dra hjørnene, eller + for nye hjørner. Areal i materiallisten.

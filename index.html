@@ -196,6 +196,15 @@
   .pchip canvas { width: 44px; height: 44px; pointer-events: none; }
   .pchip span { font-size: 11px; line-height: 1.15; max-width: 78px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
   .pchip.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+  .pchip.grp { position: relative; }
+  .pchip .pmore { position: absolute; top: 2px; right: 2px; width: 22px; height: 22px; border-radius: 7px; background: #1f2937; display: grid; place-items: center; }
+  .pchip .pmore svg { width: 14px; height: 14px; fill: none; stroke: #fff; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+  .pchip.cur { box-shadow: 0 0 0 2px #2563eb; }
+  #toolPop.vars { left: 0; right: 0; bottom: 0; border-radius: 16px 16px 0 0; padding: 10px 12px 12px; max-height: 70%; overflow-y: auto; z-index: 6; }
+  #toolPop.vars .vhd { display: flex; align-items: center; justify-content: space-between; color: #fff; font-size: 15px; }
+  #toolPop.vars .vgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 8px; }
+  #toolPop.vars .pchip { max-width: none; padding: 6px 4px; text-align: center; }
+  #toolPop.vars .pchip span { max-width: 100%; white-space: normal; }
   .paltip { color: var(--muted); font-size: 13px; padding: 8px; }
   svg.ic { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
   .ib svg.ic { width: 24px; height: 24px; }
@@ -345,6 +354,7 @@
 <script src="dxf.js"></script>
 <script src="app.js"></script>
 <script src="eq.js"></script>
+<script src="areas.js"></script>
 <script src="pdfexport.js"></script>
 <script src="lists.js"></script>
 <script src="photos.js"></script>

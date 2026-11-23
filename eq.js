@@ -9,23 +9,70 @@ let eqTool = 'sel', runStart = null, runSel = null;
 
 /* ---------- Symbolbibliotek (blokker som ikke finnes i tegningen) ----------
    Koordinater i mm, y opp, veggen i origo og symbolet ut fra veggen (+y) – som E_BRYTER. */
+// Symbolbibliotek (mm, origo ved veggen, +y ut i rommet). ring: ring for skjult anlegg innerst ved veggen.
+const L_ = (a, b) => ({ t: 'L', a, b }), C_ = (c, r) => ({ t: 'C', c, r }), T_ = (p, h, s) => ({ t: 'T', p, h, s }), PL = (pts, closed) => ({ t: 'P', pts, closed: !!closed });
+const SW = (extra) => [L_([0, 0], [0, 90]), C_([0, 140], 50), ...extra];
+const LEV = (sx, sy, tick2) => { // arm fra bryterens sirkel, med tverrstrek(er) ytterst
+  const L = Math.hypot(sx, sy), dx = sx / L, dy = sy / L, cy = 140;
+  const b = [dx * 50, cy + dy * 50], ex = [dx * 135, cy + dy * 135], px = dy * 38, py = -dx * 38;
+  const out = [L_(b, ex), L_(ex, [ex[0] + px, ex[1] + py])];
+  if (tick2) { const m = [dx * 112, cy + dy * 112]; out.push(L_(m, [m[0] + px, m[1] + py])); }
+  return out;
+};
+const SOCK = [L_([0, 0], [0, 110]), L_([-110, 110], [110, 110]), { t: 'A', c: [0, 230], r: 120 }];
 const LIB = [
-  { name: 'E_DIMMER', like: /bryter|switch/i, ents: [
-    { t: 'L', a: [0, 0], b: [0, 50] }, { t: 'C', c: [0, 100], r: 50 },
-    { t: 'L', a: [30, 140], b: [75, 240] }, { t: 'L', a: [75, 240], b: [135, 205] },
-    { t: 'P', pts: [[20, 210], [20, 168], [100, 172]], closed: true }] },
-  { name: 'E_TERMOSTAT', like: /bryter|switch/i, ents: [
-    { t: 'L', a: [0, 0], b: [0, 40] },
-    { t: 'P', pts: [[-75, 40], [75, 40], [75, 190], [-75, 190]], closed: true },
-    { t: 'T', p: [0, 115], h: 60, s: '°C' }] },
-  // takpunkter (sentrert, takmontert)
-  { name: 'E_DOWNLIGHT', like: /lys|light/i, ceil: true, ents: [{ t: 'C', c: [0, 0], r: 75 }, { t: 'L', a: [-53, -53], b: [53, 53] }, { t: 'L', a: [-53, 53], b: [53, -53] }] },
-  { name: 'E_SPOT', like: /lys|light/i, ceil: true, ents: [{ t: 'C', c: [0, 0], r: 55 }, { t: 'L', a: [-39, -39], b: [39, 39] }, { t: 'L', a: [-39, 39], b: [39, -39] }, { t: 'C', c: [0, 0], r: 14 }] },
-  { name: 'E_LAMPEPUNKT', like: /lys|light/i, ceil: true, ents: [{ t: 'C', c: [0, 0], r: 120 }, { t: 'L', a: [-85, -85], b: [85, 85] }, { t: 'L', a: [-85, 85], b: [85, -85] }] },
-  { name: 'E_ROYKVARSLER', like: /lys|light/i, ceil: true, ents: [{ t: 'C', c: [0, 0], r: 75 }, { t: 'T', p: [0, 0], h: 70, s: 'R' }] },
-  { name: 'E_HOYTTALER', like: /lys|light/i, ceil: true, ents: [{ t: 'C', c: [0, 0], r: 75 }, { t: 'T', p: [0, 0], h: 70, s: 'H' }] },
-  { name: 'E_KOBLINGSBOKS', like: /lys|light/i, ceil: true, ents: [{ t: 'P', pts: [[-60, -60], [60, -60], [60, 60], [-60, 60]], closed: true }, { t: 'C', c: [0, 0], r: 18 }] }
+  { name: 'EL_STIKK', label: 'Stikk', like: /stikk|socket/i, ring: true, num: true, ents: SOCK },
+  { name: 'EL_STIKK_IP44', label: 'Stikk IP44', like: /stikk|socket/i, ring: true, num: true, ents: [...SOCK, T_([230, 200], 70, 'IP44')] },
+  { name: 'EL_DATA', label: 'Data', like: /stikk|socket|data/i, ring: true, num: true, ents: [L_([0, 0], [0, 110]), PL([[-110, 230], [-110, 110], [110, 110], [110, 230]])] },
+  { name: 'EL_BRYTER', label: 'Enpolet', like: /bryter|switch/i, ring: true, ents: SW(LEV(1, 1)) },
+  { name: 'EL_BRYTER_2P', label: 'Topolet', like: /bryter|switch/i, ring: true, ents: SW(LEV(1, 1, true)) },
+  { name: 'EL_ENDEVENDER', label: 'Endevender', like: /bryter|switch/i, ring: true, ents: SW([...LEV(1, 1), ...LEV(-1, -0.55)]) },
+  { name: 'EL_SERIEVENDER', label: 'Serievender', like: /bryter|switch/i, ring: true, ents: SW([...LEV(1, 1), ...LEV(-1, 1)]) },
+  { name: 'EL_KRYSSVENDER', label: 'Kryssvender', like: /bryter|switch/i, ring: true, ents: SW([...LEV(1, 1), ...LEV(-1, 1), ...LEV(1, -0.55), ...LEV(-1, -0.55)]) },
+  { name: 'E_DIMMER', label: 'Dimmer', like: /bryter|switch/i, ring: true, ents: SW([L_([35, 175], [100, 270]), PL([[52, 238], [58, 196], [92, 214]], true)]) },
+  { name: 'EL_TRYKKNAPP', label: 'Trykknapp', like: /bryter|switch/i, ring: true, ents: [L_([0, 0], [0, 80]), C_([0, 150], 70), C_([0, 150], 40)] },
+  { name: 'EL_TRYKKNAPP_LYS', label: 'Trykk m/lys', like: /bryter|switch/i, ring: true, ents: [L_([0, 0], [0, 80]), C_([0, 150], 70), C_([0, 150], 40), L_([-28, 122], [28, 178]), L_([28, 122], [-28, 178])] },
+  { name: 'EL_PIR', label: 'Bevegelse PIR', like: /bryter|switch/i, ring: true, ents: [L_([0, 0], [0, 80]), PL([[0, 80], [-70, 200], [70, 200]], true), L_([-40, 235], [-80, 305]), L_([0, 235], [0, 315]), L_([40, 235], [80, 305])] },
+  { name: 'E_TERMOSTAT', label: 'Termostat', like: /bryter|switch/i, ring: true, ents: [L_([0, 0], [0, 90]), PL([[-75, 90], [75, 90], [75, 240], [-75, 240]], true), T_([0, 165], 60, '°C')] },
+  { name: 'EL_VEGGLYS', label: 'Vegglys', like: /lys|light/i, ring: true, ents: [L_([0, 0], [0, 130]), L_([-70, 130], [70, 270]), L_([70, 130], [-70, 270])] },
+  { name: 'EL_PANELOVN', label: 'Panelovn', like: /ovn|varme|termo|bryter|switch/i, ents: [PL([[-350, 25], [350, 25], [350, 155], [-350, 155]], true), T_([0, 90], 70, 'OV')] },
+  { name: 'EL_PORTTELEFON', label: 'Porttelefon', like: /bryter|switch|stikk/i, ring: true, ents: [L_([0, 0], [0, 70]), PL([[-130, 70], [130, 70], [130, 250], [-130, 250]], true), PL([[-15, 130], [35, 100], [35, 220], [-15, 190]], true), L_([-95, 160], [-35, 160])] },
+  // takmontert (sentrert)
+  { name: 'EL_LYSPUNKT', label: 'Lyspunkt', like: /lys|light/i, ceil: true, ents: [L_([-85, -85], [85, 85]), L_([-85, 85], [85, -85])] },
+  { name: 'E_DOWNLIGHT', label: 'Downlight', like: /lys|light/i, ceil: true, ents: [C_([0, 0], 75), L_([-53, -53], [53, 53]), L_([-53, 53], [53, -53])] },
+  { name: 'E_SPOT', label: 'Spot', like: /lys|light/i, ceil: true, ents: [C_([0, 0], 55), L_([-39, -39], [39, 39]), L_([-39, 39], [39, -39]), C_([0, 0], 14)] },
+  { name: 'E_LAMPEPUNKT', label: 'Lampepunkt', like: /lys|light/i, ceil: true, ents: [C_([0, 0], 120), L_([-85, -85], [85, 85]), L_([-85, 85], [85, -85])] },
+  { name: 'E_ROYKVARSLER', label: 'Røykvarsler', like: /lys|light/i, ceil: true, ents: [C_([0, 0], 75), T_([0, 0], 70, 'R')] },
+  { name: 'E_HOYTTALER', label: 'Høyttaler', like: /lys|light/i, ceil: true, ents: [C_([0, 0], 75), T_([0, 0], 70, 'H')] },
+  { name: 'E_KOBLINGSBOKS', label: 'Koblingsboks', like: /lys|light/i, ceil: true, ents: [PL([[-60, -60], [60, -60], [60, 60], [-60, 60]], true), C_([0, 0], 18)] }
 ];
+const RING_R = 25;
+// Navn på varianter: <blokk>[_<antall>][_UR]  (_UR = uten ring, brukes når symbolet står i en stabel)
+function libParse(name) {
+  const m = /^(.*?)(?:_(\d))?(_UR)?$/.exec(name);
+  const base = LIB.find(b => b.name === m[1]);
+  if (!base) return null;
+  if ((m[2] && !base.num) || (m[3] && !base.ring)) return null;
+  return { base, n: m[2] ? +m[2] : 1, ring: base.ring && !m[3] };
+}
+function libEnts(name) {
+  const q = libParse(name);
+  if (!q) return null;
+  let ents = q.base.ents.map(e => ({ ...e }));
+  if (q.base.num && q.n >= 2) ents.push(L_([95, 95], [25, 185]), T_([150, 60], 80, String(q.n)));
+  if (q.ring) { // ringen ved veggen, stammen starter utenfor den
+    ents = ents.map(e => e.t === 'L' && e.a[0] === 0 && e.a[1] === 0 && e.b[0] === 0 && e.b[1] > 2 * RING_R ? L_([0, 2 * RING_R], e.b) : e);
+    ents.push(C_([0, RING_R], RING_R));
+  }
+  return ents;
+}
+// geometrinavn for et symbol: antall uttak og stabel påvirker tegningen, ikke hva symbolet er
+function gname(it) {
+  const d = libDef(it.block);
+  if (!d) return it.block;
+  return it.block + (d.num && it.n >= 2 ? '_' + Math.min(9, it.n) : '') + (d.ring && it.stackOn ? '_UR' : '');
+}
+function igeom(it) { return doc.geom(gname(it)); }
 const PT_BLOCK = { downlight: 'E_DOWNLIGHT', spot: 'E_SPOT', lampe: 'E_LAMPEPUNKT', royk: 'E_ROYKVARSLER', hoyttaler: 'E_HOYTTALER', boks: 'E_KOBLINGSBOKS' };
 // takpunkter som utstyr (vises uten mål i Utstyr-modus)
 function ptItems() {
@@ -87,24 +134,23 @@ function libPairs(e) {
     for (const q of e.pts) p.push([10, f6(q[0])], [20, f6(q[1])]);
     return { type: 'LWPOLYLINE', pairs: p };
   }
+  if (e.t === 'A') return { type: 'ARC', pairs: [[100, 'AcDbEntity'], [8, '0'], [100, 'AcDbCircle'], [10, f6(e.c[0])], [20, f6(e.c[1])], [30, '0'], [40, f6(e.r)], [100, 'AcDbArc'], [50, String(e.a0 ?? 180)], [51, String(e.a1 ?? 360)]] };
   return { type: 'TEXT', pairs: [[100, 'AcDbEntity'], [8, '0'], [100, 'AcDbText'], [10, f6(e.p[0])], [20, f6(e.p[1])], [30, '0'], [40, f6(e.h)], [1, e.s], [72, '1'], [11, f6(e.p[0])], [21, f6(e.p[1])], [31, '0'], [100, 'AcDbText'], [73, '2']] };
 }
 let LIBP = null;
+const LIBG = new Map();
 function libGeom(name) {
-  if (!LIB.some(b => b.name === name)) return null;
-  if (!LIBP) {
-    const L = ['0', 'SECTION', '2', 'BLOCKS'];
-    for (const b of LIB) {
-      L.push('0', 'BLOCK', '2', b.name, '10', '0', '20', '0');
-      for (const e of b.ents) { const q = libPairs(e); L.push('0', q.type); for (const [c, v] of q.pairs) L.push(String(c), v); }
-      L.push('0', 'ENDBLK');
-    }
-    L.push('0', 'ENDSEC', '0', 'EOF');
-    LIBP = DXF.parseDXF(L.join('\n'));
-  }
-  return LIBP.blockGeom(name);
+  if (LIBG.has(name)) return LIBG.get(name);
+  const ents = libEnts(name);
+  if (!ents) return null;
+  const L = ['0', 'SECTION', '2', 'BLOCKS', '0', 'BLOCK', '2', name, '10', '0', '20', '0'];
+  for (const en of ents) { const q = libPairs(en); L.push('0', q.type); for (const [c, v] of q.pairs) L.push(String(c), v); }
+  L.push('0', 'ENDBLK', '0', 'ENDSEC', '0', 'EOF');
+  const g = DXF.parseDXF(L.join('\n')).blockGeom(name);
+  LIBG.set(name, g);
+  return g;
 }
-function libDef(name) { return LIB.find(b => b.name === name); }
+function libDef(name) { const q = name && libParse(name); return q ? q.base : null; }
 
 function eqActive() { return edMode === 'utstyr' && doc && doc.kind === 'dxf'; }
 
@@ -164,7 +210,7 @@ function buildItems() {
   P.eq.runs = P.eq.runs || [];
   resolveStacks();
 }
-function countable(block) { return !!(EQ.num && EQ.num[block]) || /stikk|socket|uttak/i.test(block); }
+function countable(block) { const d = libDef(block); if (d) return !!d.num; return !!(EQ.num && EQ.num[block]) || /stikk|socket|uttak/i.test(block); }
 function defaultN(block) {
   const N = EQ.num && EQ.num[block];
   if (N) return +Object.entries(N.counts).sort((a, b) => b[1] - a[1])[0][0];
@@ -176,7 +222,7 @@ function numPos(it) {
   return { x: it.x + c * N.lx - sn * N.ly, y: it.y + sn * N.lx + c * N.ly };
 }
 function itemCenter(it, useOrig) {
-  const g = doc.geom(it.block);
+  const g = igeom(it);
   const x = useOrig ? it.ox : it.x, y = useOrig ? it.oy : it.y, r = useOrig ? it.or : it.r;
   if (!g) return { x, y };
   const cx = g.cx * it.sx, cy = g.cy * it.sy, c = Math.cos(r), s = Math.sin(r);
@@ -257,12 +303,13 @@ function drawEquip(ctx, v, dpr, o, W, H) {
   const L = doc.r.layers, k = o.k || 1;
   const showChg = !o.export && S.showChg !== false && edMode === 'utstyr';
   drawKursHl(ctx, v, dpr, o);
+  if ((o.export ? !expDims() : edMode === 'utstyr') && typeof drawAreas === 'function') drawAreas(ctx, v, dpr, o);
   drawRuns(ctx, v, dpr, o);
   drawKurs(ctx, v, dpr, o);
   const list = (o.export ? !expDims() : edMode === 'utstyr') ? allItems() : EQ.items;
   for (const it of list) {
     if (!doc.show[it.li]) continue;
-    const g = doc.geom(it.block);
+    const g = igeom(it);
     if (!g) continue;
     const col = aci(L[it.li].color);
     const moved = isMoved(it);
@@ -328,14 +375,14 @@ function drawEquip(ctx, v, dpr, o, W, H) {
   if (!o.export && edMode === 'utstyr' && eqSet.size > 1) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     for (const it of groupItems()) {
-      const g = doc.geom(it.block), c = itemCenter(it), r = Math.max(18, (g ? g.rad * Math.abs(it.sx) : 0) * v.s + 8);
+      const g = igeom(it), c = itemCenter(it), r = Math.max(18, (g ? g.rad * Math.abs(it.sx) : 0) * v.s + 8);
       ctx.beginPath(); ctx.arc(c.x * v.s + v.tx, c.y * v.s + v.ty, r, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(37,99,235,.12)'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#2563eb'; ctx.stroke();
     }
   } else if (!o.export && edMode === 'utstyr' && eqSel) {
     const it = itemByKey(eqSel);
     if (it && !it.del) {
-      const g = doc.geom(it.block), c = itemCenter(it);
+      const g = igeom(it), c = itemCenter(it);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const r = Math.max(22, (g ? g.rad * Math.abs(it.sx) : 0) * v.s + 10);
       ctx.beginPath(); ctx.arc(c.x * v.s + v.tx, c.y * v.s + v.ty, r, 0, Math.PI * 2);
@@ -350,7 +397,7 @@ function hitItem(x, y) {
   let best = null, bd = Infinity;
   for (const it of allItems()) {
     if (it.del || !doc.show[it.li]) continue;
-    const g = doc.geom(it.block), c = itemCenter(it);
+    const g = igeom(it), c = itemCenter(it);
     const sx = c.x * view.s + view.tx, sy = c.y * view.s + view.ty;
     const rr = Math.max(26, (g ? g.rad * Math.abs(it.sx) : 0) * view.s + 8);
     const d = Math.hypot(sx - x, sy - y);
@@ -360,6 +407,8 @@ function hitItem(x, y) {
 }
 let eqSet = new Set();
 function eqSelect(key, add) {
+  if (key && typeof areaSel !== 'undefined') areaSel = null;
+  if (!key && !add && typeof areaSel !== 'undefined') areaSel = null;
   if (add && key) { if (eqSet.size === 0 && eqSel) eqSet.add(eqSel); if (eqSet.has(key)) eqSet.delete(key); else eqSet.add(key); eqSel = eqSet.size ? [...eqSet].pop() : null; if (eqSet.size < 2) eqSet.clear(); }
   else { eqSet.clear(); eqSel = key; }
   updateEqBar(); req();
@@ -379,12 +428,15 @@ function eqTap(x, y, g) {
     if (hr) { runSel = hr.id; eqSel = null; updateEqBar(); req(); return; }
     runStart = null; runSel = null; runBanner(); updateEqBar(); req(); return;
   }
+  if (eqArm === '#VK') { vkTap(toUnit(x, y)); return; }
   if (eqArm) { runSel = null; addItem(eqArm, toUnit(x, y)); req(); return; }
   if (g.hi) { runSel = null; if (g.mod) eqSelect(g.hi.key, true); else eqSelect(eqSel === g.hi.key && !eqSet.size ? null : g.hi.key); return; }
   const hr = hitRun(x, y);
   if (hr && !eqArm) { runSel = hr.id; eqSel = null; updateEqBar(); req(); return; }
   runSel = null;
   if (eqArm) { addItem(eqArm, toUnit(x, y)); return; }
+  const ha = typeof hitArea === 'function' && hitArea(toUnit(x, y));
+  if (ha) { selectArea(areaSel === ha.id ? null : ha.id); return; }
   eqSelect(null);
 }
 function templateFor(block) {
@@ -397,14 +449,14 @@ function likeFor(block) {
   if (!d) return null;
   return doc.r.inserts.find(i => doc.eqIns[i.idx] && d.like.test(i.block)) || null;
 }
-function addItem(block, u) {
+function addItem(block, u, n) {
   pushUndo();
   const t = templateFor(block), like = t || likeFor(block);
   const layer = like ? like.layer : (doc.r.layers.find((l, i) => doc.equip[i]) || { name: '0' }).name;
   const id = uid();
   const it = { key: 'a' + id, id, idx: null, added: true, block, layer, li: Math.max(0, layerIndex(layer)),
     x: u.x, y: u.y, r: like ? like.r : 0, sx: like ? like.sx : 1, sy: like ? like.sy : 1, tmpl: t ? t.idx : null, del: false, labels: [], numLabel: null };
-  it.n = it.n0 = defaultN(block);
+  it.n = it.n0 = n || (eqArm === block && eqArmN) || defaultN(block);
   placeItem(it, u.x, u.y);
   it.ox = it.x; it.oy = it.y; it.or = it.r;
   EQ.items.push(it);
@@ -417,7 +469,7 @@ function addItem(block, u) {
 /* ---------- Stabling (flere symboler over hverandre på samme sted) ---------- */
 function commitAll() { for (const it of EQ.items) commitItem(it); }
 function stackH(it) {
-  const g = doc.geom(it.block), info = infoOf(it.block), mpu = P.mmPerUnit || 1;
+  const g = igeom(it), info = infoOf(it.block), mpu = P.mmPerUnit || 1;
   if (!g) return 200 / mpu;
   const a = info.local + Math.PI, ux = Math.cos(a), uy = Math.sin(a), band = 85 / mpu;
   let h = 0;
@@ -633,7 +685,10 @@ function updateEqBar() {
   const te = eqTool === 'text' && txtSel && allTextDisp().find(q => q.key === txtSel);
   let title = '', sub = '', acts = '', hint = '';
   hlKurs = it && !it.del && eqSet.size <= 1 ? findKurs(it) : null;
-  if (eqSet.size > 1 && eqTool === 'sel' && eqActive()) {
+  const as = typeof areaSel !== 'undefined' && areaSel && eqActive() && areaSheet();
+  if (as) {
+    ({ title, sub, acts, hint } = as);
+  } else if (eqSet.size > 1 && eqTool === 'sel' && eqActive()) {
     title = `${eqSet.size} symboler valgt`;
     hint = 'Dra ett av dem for å flytte alle samlet.';
     acts = abtn('gdel', 'del', 'Slett alle', 'dz') + abtn('gnone', 'x', 'Fjern valg');
@@ -695,7 +750,7 @@ function selAnchor() {
   if (run) { const g = runGeom(run); return g ? { x: g.apex.x * view.s + view.tx, y: g.apex.y * view.s + view.ty, r: 14 } : null; }
   const it = itemByKey(eqSel);
   if (!it) return null;
-  const g = doc.geom(it.block), c = itemCenter(it);
+  const g = igeom(it), c = itemCenter(it);
   return { x: c.x * view.s + view.tx, y: c.y * view.s + view.ty, r: Math.max(22, (g ? g.rad * Math.abs(it.sx) : 0) * view.s + 10) };
 }
 function positionEqBar() { }
@@ -709,7 +764,8 @@ function openNPick(it) {
   np.classList.add('on');
 }
 function eqAction(a) {
-  if (a === 'close') { $('#npick').classList.remove('on'); if (eqTool === 'text') { txtClear(); } eqSet.clear(); eqSel = null; runSel = null; updateEqBar(); req(); return; }
+  if (a === 'close') { $('#npick').classList.remove('on'); if (eqTool === 'text') { txtClear(); } eqSet.clear(); eqSel = null; runSel = null; if (typeof areaSel !== 'undefined') areaSel = null; updateEqBar(); req(); return; }
+  if (a.startsWith('vk')) return areaAction(a);
   if (a === 'gdel') return groupDelete();
   if (a === 'gnone') { eqSet.clear(); eqSel = null; updateEqBar(); req(); return; }
   if (a === 'tedit' || a === 'treset' || a === 'tdel' || a === 'tmulti') return textAction(a);
@@ -784,7 +840,7 @@ function kursGeom(key) {
   const lines = kursText(k).split('\n');
   const fs = h / 0.718, w = Math.max(...lines.map(l => textW(l, fs)));
   const R = Math.hypot(w / 2, lines.length * 1.66 * h / 2 * 0.9) + 0.35 * h;
-  const c = itemCenter(it), g = doc.geom(it.block), ir = g ? g.rad * Math.abs(it.sx) : 100 / mpu;
+  const c = itemCenter(it), g = igeom(it), ir = g ? g.rad * Math.abs(it.sx) : 100 / mpu;
   let dx = k.dx, dy = k.dy;
   if (dx == null) {
     const t = tavlePos();
@@ -919,7 +975,7 @@ function notesMap() { return (P.eq.notes = P.eq.notes || {}); }
 function noteH() { const hs = doc.texts.filter(t => t.item).map(t => t.h).sort((a, b) => a - b); return hs.length ? hs[hs.length >> 1] : 100 / (P.mmPerUnit || 1); }
 function noteLayer(it) { const l = doc.r.layers.find(l => /tekst|text/i.test(l.name) && /^e/i.test(l.name)); return l ? l.name : it.layer; }
 function noteDefault(it) {
-  const mpu = P.mmPerUnit || 1, g = doc.geom(it.block), rad = g ? g.rad * Math.abs(it.sx) : 100 / mpu, info = infoOf(it.block);
+  const mpu = P.mmPerUnit || 1, g = igeom(it), rad = g ? g.rad * Math.abs(it.sx) : 100 / mpu, info = infoOf(it.block);
   if (info.wall) { const a = info.local + Math.PI, d = rad + 260 / mpu; return { lx: Math.cos(a) * d, ly: Math.sin(a) * d }; }
   return { lx: rad + 260 / mpu, ly: -rad * 0.6 };
 }
@@ -934,7 +990,7 @@ function noteDisp(it) {
 function noteLeader(it) {
   const n = P.eq.notes[it.key], d = noteDisp(it);
   if (!d || n.leader === false) return null;
-  const mpu = P.mmPerUnit || 1, g = doc.geom(it.block), rad = g ? g.rad * Math.abs(it.sx) : 100 / mpu, c = itemCenter(it);
+  const mpu = P.mmPerUnit || 1, g = igeom(it), rad = g ? g.rad * Math.abs(it.sx) : 100 / mpu, c = itemCenter(it);
   const dx = c.x - d.x, dy = c.y - d.y, L = Math.hypot(dx, dy);
   if (n.leader !== true && (n.lx == null || L < rad + 450 / mpu)) return null;
   if (L < 1e-6) return null;
@@ -1159,7 +1215,7 @@ function newTextAt(u) {
 
 /* ---------- Føringer (buet strek = skjult anlegg) ---------- */
 function itemByKey(k) { return allItems().find(i => i.key === k && !i.del); }
-function itemRad(it) { const g = doc.geom(it.block); return g ? g.rad * Math.abs(it.sx) * 0.85 : 0; }
+function itemRad(it) { const g = igeom(it); return g ? g.rad * Math.abs(it.sx) * 0.85 : 0; }
 function arcPoints(p1, p2, b, n) {
   const th = 4 * Math.atan(b), dx = p2.x - p1.x, dy = p2.y - p1.y, c = Math.hypot(dx, dy);
   if (Math.abs(b) < 1e-6) return [p1, p2];
@@ -1279,64 +1335,111 @@ $('#selBtn').onclick = () => {
 };
 
 /* ---------- Palett ---------- */
-function prettyBlock(n) { return n.replace(/^(E|EL)[-_ ]/i, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim(); }
-function paletteBlocks() {
+function prettyBlock(n) { const d = libDef(n); if (d && d.label) return d.label; return n.replace(/^(E|EL)[-_ ]/i, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+// Paletten er gruppert: én knapp per gruppe viser sist brukte variant; pilen (eller hold inne) viser alle
+const PGROUPS = [
+  { id: 'stikk', name: 'Stikk', re: /stikk|socket|stik/i, lib: [['EL_STIKK', 1, 'Enkel'], ['EL_STIKK', 2, 'Dobbel'], ['EL_STIKK', 3, 'Tre uttak'], ['EL_STIKK_IP44', 2, 'IP44']] },
+  { id: 'data', name: 'Data', re: /data|rj45|ekom|tele/i, lib: [['EL_DATA', 1, 'Data enkel'], ['EL_DATA', 2, 'Data dobbel']] },
+  { id: 'bryter', name: 'Bryter', re: /bryter|switch|dimmer|vender|trykk|pir|bevegel/i, lib: [['EL_BRYTER'], ['EL_BRYTER_2P'], ['EL_ENDEVENDER'], ['EL_SERIEVENDER'], ['EL_KRYSSVENDER'], ['E_DIMMER'], ['EL_TRYKKNAPP'], ['EL_TRYKKNAPP_LYS'], ['EL_PIR']] },
+  { id: 'lys', name: 'Lys', re: /lys|light|lampe|spot|down/i, lib: [['EL_LYSPUNKT'], ['EL_VEGGLYS'], ['E_DOWNLIGHT'], ['E_SPOT']] },
+  { id: 'varme', name: 'Varme', re: /termo|ovn|varme|heat/i, lib: [['E_TERMOSTAT'], ['EL_PANELOVN'], ['#VK', null, 'Varmekabel']] },
+  { id: 'signal', name: 'Signal', re: /port|ringe|klokke|r[oø]yk|h[oø]yttal|alarm/i, lib: [['EL_PORTTELEFON'], ['E_ROYKVARSLER'], ['E_HOYTTALER']] },
+  { id: 'annet', name: 'Annet', re: null, lib: [['E_KOBLINGSBOKS']] }
+];
+const vkey = v => v.b + (v.n ? '#' + v.n : '');
+function paletteGroups() {
   const cnt = new Map();
-  for (const it of EQ.items) if (!it.added) cnt.set(it.block, (cnt.get(it.block) || 0) + 1);
-  for (const n of doc.r.blockNames) if (!cnt.has(n) && EQ_RE.test(n)) cnt.set(n, 0);
-  const list = [...cnt.entries()].sort((a, b) => b[1] - a[1]).map(e => e[0]);
-  for (const b of LIB) {
-    if (list.includes(b.name) || b.ceil) continue;
-    const i = list.findIndex(n => b.like.test(n));
-    list.splice(i >= 0 ? i + 1 : list.length, 0, b.name);
+  for (const it of EQ.items) if (!it.added && !libDef(it.block)) cnt.set(it.block, (cnt.get(it.block) || 0) + 1);
+  for (const n of doc.r.blockNames) if (!cnt.has(n) && EQ_RE.test(n) && !libDef(n)) cnt.set(n, 0);
+  const groups = PGROUPS.map(g => ({ ...g, vars: [] }));
+  for (const [n] of [...cnt.entries()].sort((a, b) => b[1] - a[1])) {
+    const g = groups.find(q => q.re && q.re.test(n)) || groups[groups.length - 1];
+    g.vars.push({ b: n, n: countable(n) ? defaultN(n) : null, label: cap(prettyBlock(n).toLowerCase()) + ' (tegning)' });
   }
-  return list;
+  for (const g of groups) for (const [b, n, label] of g.lib) g.vars.push({ b, n: n || null, label: label || (libDef(b) || {}).label || b });
+  return groups.filter(g => g.vars.length);
 }
+function curVar(g) {
+  const last = S.palLast && S.palLast[g.id];
+  return g.vars.find(v => vkey(v) === last) || g.vars[0];
+}
+function drawSym(c, v, size) {
+  c.clearRect(0, 0, size, size);
+  if (v.b === '#VK') { // varmekabelfelt
+    c.setLineDash([7, 5]); c.strokeStyle = '#b91c1c'; c.lineWidth = 3; c.strokeRect(size * .14, size * .22, size * .72, size * .56); c.setLineDash([]);
+    c.fillStyle = '#b91c1c'; c.font = `700 ${size * .22}px system-ui`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('VK', size / 2, size / 2); return;
+  }
+  const name = libDef(v.b) ? gname({ block: v.b, n: v.n || 1 }) : v.b, g = doc.geom(name);
+  if (!g) return;
+  const bb = g.bbox, w = bb.x1 - bb.x0 || 1, h = bb.y1 - bb.y0 || 1, s = size * .8 / Math.max(w, h);
+  const t = templateFor(v.b) || likeFor(v.b), col = t ? aci(doc.r.layers[t.li].color) : '#111';
+  c.setTransform(s, 0, 0, s, size / 2 - (bb.x0 + w / 2) * s, size / 2 - (bb.y0 + h / 2) * s);
+  c.strokeStyle = col; c.lineWidth = 3.2 / s; c.lineCap = 'round';
+  if (g.fill) { c.fillStyle = col; c.fill(g.fill, 'evenodd'); }
+  c.stroke(g.path);
+  for (const tx of g.texts) drawText(c, tx, { s, tx: 0, ty: 0 }, 0, 0, col, 0, 0);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+}
+const CHEV = '<svg viewBox="0 0 24 24"><path d="M6 15l6-6l6 6"/></svg>';
 function buildPalette() {
   const el = $('#pal');
-  const names = paletteBlocks();
-  if (!names.length) { el.innerHTML = '<span class="paltip">Fant ingen utstyrsblokker – velg utstyrslag i menyen</span>'; return; }
-  el.innerHTML = names.map(n => `<button class="pchip ${n === eqArm ? 'on' : ''}" data-b="${esc(n)}"><canvas width="88" height="88"></canvas><span>${esc(prettyBlock(n))}</span></button>`).join('');
-  el.querySelectorAll('.pchip').forEach(b => {
-    const name = b.dataset.b, g = doc.geom(name), c = $('canvas', b).getContext('2d');
-    if (g) {
-      const bb = g.bbox, w = bb.x1 - bb.x0 || 1, h = bb.y1 - bb.y0 || 1, s = 70 / Math.max(w, h);
-      const t = templateFor(name) || likeFor(name), col = t ? aci(doc.r.layers[t.li].color) : '#111';
-      c.setTransform(s, 0, 0, s, 44 - (bb.x0 + w / 2) * s, 44 - (bb.y0 + h / 2) * s);
-      c.strokeStyle = col; c.lineWidth = 3.2 / s; c.lineCap = 'round';
-      if (g.fill) { c.fillStyle = col; c.fill(g.fill, 'evenodd'); }
-      c.stroke(g.path);
-      for (const tx of g.texts) drawText(c, tx, { s, tx: 0, ty: 0 }, 0, 0, col, 0, 0);
-    }
-    palPointer(b, name);
+  const groups = paletteGroups();
+  el.innerHTML = groups.map(g => { const v = curVar(g); return `<button class="pchip grp ${eqArm && vkey({ b: eqArm, n: eqArmN }) === vkey(v) ? 'on' : ''}" data-g="${g.id}"><canvas width="88" height="88"></canvas><span>${esc(v.label)}</span>${g.vars.length > 1 ? `<i class="pmore" aria-label="Flere ${esc(g.name.toLowerCase())}">${CHEV}</i>` : ''}</button>`; }).join('');
+  el.querySelectorAll('.pchip').forEach(btn => {
+    const g = groups.find(q => q.id === btn.dataset.g), v = curVar(g);
+    drawSym($('canvas', btn).getContext('2d'), v, 88);
+    palPointer(btn, v, g);
   });
   requestAnimationFrame(updFade);
 }
-function setArm(name) {
+function openVariants(g) {
+  const pop = $('#toolPop');
+  pop.innerHTML = `<div class="vhd"><b>${esc(g.name)}</b><button class="ib" data-x aria-label="Lukk">${ic('x')}</button></div><div class="vgrid">` +
+    g.vars.map((v, i) => `<button class="pchip ${vkey(v) === vkey(curVar(g)) ? 'cur' : ''}" data-i="${i}"><canvas width="88" height="88"></canvas><span>${esc(v.label)}</span></button>`).join('') + '</div>';
+  pop.classList.add('on', 'vars');
+  pop.querySelectorAll('[data-i]').forEach(b => {
+    const v = g.vars[+b.dataset.i];
+    drawSym($('canvas', b).getContext('2d'), v, 88);
+    b.onclick = () => { S.palLast = { ...(S.palLast || {}), [g.id]: vkey(v) }; saveS(); closeVariants(); setArm(v.b, v.n); };
+  });
+  $('[data-x]', pop).onclick = closeVariants;
+}
+function closeVariants() { const p = $('#toolPop'); p.classList.remove('on', 'vars'); p.innerHTML = ''; }
+let eqArmN = null;
+function setArm(name, n) {
+  eqArmN = name ? (n || null) : null;
+  if (name !== '#VK' && typeof vkStop === 'function') vkStop(true);
   if (name && eqTool === 'run') setRunTool(false);
   if (name && eqTool === 'text') setTextTool(false);
   eqArm = name;
-  document.querySelectorAll('#pal .pchip').forEach(b => b.classList.toggle('on', b.dataset.b === name));
-  if (name) { eqSel = null; eqSet.clear(); runSel = null; updateEqBar(); setBanner(`<b>Plasserer: ${esc(cap(prettyBlock(name)))}</b><small>Trykk i tegningen for hvert symbol</small>`, 'Ferdig', () => setArm(null), true); }
+  buildPalette();
+  const lbl = name === '#VK' ? 'Varmekabel' : cap(prettyBlock(name || '')) + (eqArmN ? (eqArmN > 1 ? ` (${eqArmN} uttak)` : ' (enkel)') : '');
+  if (name === '#VK') { eqSel = null; eqSet.clear(); runSel = null; updateEqBar(); setBanner(`<b>Varmekabel</b><small>Trykk inne i rommet – feltet følger veggene</small>`, 'Ferdig', () => setArm(null), true); }
+  else if (name) { eqSel = null; eqSet.clear(); runSel = null; updateEqBar(); setBanner(`<b>Plasserer: ${esc(lbl)}</b><small>Trykk i tegningen for hvert symbol</small>`, 'Ferdig', () => setArm(null), true); }
   else setBanner(null);
   updToolsBtn(); req();
 }
 // Dra et symbol opp fra paletten og slipp det på tegningen
 let palDrag = null;
-function palPointer(btn, name) {
-  let st = null;
+function palPointer(btn, v, g) {
+  let st = null, lp = 0;
+  const name = v.b;
   btn.addEventListener('pointerdown', e => {
-    st = { x: e.clientX, y: e.clientY, id: e.pointerId, drag: false };
+    if (e.target.closest('.pmore')) { e.preventDefault(); openVariants(g); st = null; return; }
+    st = { x: e.clientX, y: e.clientY, id: e.pointerId, drag: false, long: false };
+    clearTimeout(lp);
+    if (g.vars.length > 1) lp = setTimeout(() => { if (st && !st.drag) { st.long = true; try { navigator.vibrate && navigator.vibrate(12); } catch (er) { } openVariants(g); } }, 480);
     if (e.pointerType === 'mouse') try { btn.setPointerCapture(e.pointerId); } catch (er) { }
   });
   btn.addEventListener('pointermove', e => {
     if (!st || st.id !== e.pointerId) return;
     const dx = e.clientX - st.x, dy = e.clientY - st.y;
-    if (!st.drag && dy < -14 && Math.abs(dy) > Math.abs(dx) * 0.6) {
+    if (Math.hypot(dx, dy) > 8) clearTimeout(lp);
+    if (!st.drag && !st.long && name !== '#VK' && dy < -14 && Math.abs(dy) > Math.abs(dx) * 0.6) {
       st.drag = true;
       try { btn.setPointerCapture(e.pointerId); } catch (er) { }
       const t = templateFor(name) || likeFor(name);
-      palDrag = { key: 'drag', block: name, layer: t ? t.layer : '0', li: t ? t.li : 0, x: 0, y: 0, r: t ? t.r : 0, sx: t ? t.sx : 1, sy: t ? t.sy : 1, labels: [], added: true, snap: -1 };
+      palDrag = { key: 'drag', block: name, n: v.n || 1, layer: t ? t.layer : '0', li: t ? t.li : 0, x: 0, y: 0, r: t ? t.r : 0, sx: t ? t.sx : 1, sy: t ? t.sy : 1, labels: [], added: true, snap: -1 };
       try { navigator.vibrate && navigator.vibrate(10); } catch (er) { }
     }
     if (st.drag) {
@@ -1349,17 +1452,20 @@ function palPointer(btn, name) {
     }
   });
   const end = e => {
+    clearTimeout(lp);
     if (!st || st.id !== e.pointerId) return;
     if (st.drag) {
       if (palDrag && palDrag.inside && e.type === 'pointerup') {
         const p = palDrag; palDrag = null;
-        const it = addItem(p.block, { x: p.x, y: p.y });
+        S.palLast = { ...(S.palLast || {}), [g.id]: vkey(v) }; saveS();
+        const it = addItem(p.block, { x: p.x, y: p.y }, p.n);
         it.x = p.x; it.y = p.y; it.r = p.r; it.ox = p.x; it.oy = p.y; it.or = p.r; commitItem(it); save();
         updateEqBar();
       }
       palDrag = null; req();
-    } else if (e.type === 'pointerup' && Math.hypot(e.clientX - st.x, e.clientY - st.y) < 10) {
-      setArm(eqArm === name ? null : name);
+    } else if (!st.long && e.type === 'pointerup' && Math.hypot(e.clientX - st.x, e.clientY - st.y) < 10) {
+      const same = eqArm === name && (eqArmN || null) === (v.n || null);
+      setArm(same ? null : name, v.n);
     }
     st = null;
   };
@@ -1378,7 +1484,7 @@ function drawDragFx(ctx) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   let txt, cls = '';
   if (stackTo) {
-    const c = S_(itemCenter(stackTo)), g = doc.geom(stackTo.block), r = Math.max(18, (g ? g.rad * Math.abs(stackTo.sx) : 0) * view.s + 8);
+    const c = S_(itemCenter(stackTo)), g = igeom(stackTo), r = Math.max(18, (g ? g.rad * Math.abs(stackTo.sx) : 0) * view.s + 8);
     ctx.strokeStyle = '#f97316'; ctx.lineWidth = 3; ctx.setLineDash([6, 4]);
     ctx.beginPath(); ctx.arc(c.x, c.y, r, 0, Math.PI * 2); ctx.stroke();
     txt = 'Stables på ' + cap(prettyBlock(stackTo.block)); cls = 'stack';
@@ -1404,7 +1510,7 @@ function drawDragFx(ctx) {
 }
 function drawPalDrag(ctx) {
   if (!palDrag || !palDrag.inside) return;
-  const g = doc.geom(palDrag.block);
+  const g = doc.geom(gname(palDrag));
   if (!g) return;
   drawBlock(ctx, view, dpr, g, palDrag.x, palDrag.y, palDrag.r, palDrag.sx, palDrag.sy, aci(doc.r.layers[palDrag.li].color), 0.85, 1);
 }
@@ -1485,13 +1591,15 @@ function eqChanges() {
     if (it.pt.type === 'lampe') { const t = doc.r.inserts.find(i => doc.eqIns[i.idx] && /^E_LYS$|lys$/i.test(i.block) && !/vegg/i.test(i.block)); if (t) { block = t.block; tmpl = t.idx; } }
     added.push({ block, layer: it.layer, x: it.x, y: it.y, r: 0, sx: 1, sy: 1, tmpl, _pt: true });
   }
+  for (const a of added) { if (a._pt) continue; const it = itemByKey('a' + a.id); if (it) a.block = gname(it); }
   const newBlocks = [];
-  for (const it of EQ.items.concat(added.filter(a => a._pt).map(a => ({ added: true, block: a.block })))) {
-    if (!it.added || it.del || doc.r.blockNames.includes(it.block) || newBlocks.some(b => b.name === it.block)) continue;
-    const d = libDef(it.block);
-    if (d) newBlocks.push({ name: d.name, ents: d.ents.map(libPairs) });
+  for (const a of added) {
+    if (doc.r.blockNames.includes(a.block) || newBlocks.some(b => b.name === a.block)) continue;
+    const ents = libEnts(a.block);
+    if (ents) newBlocks.push({ name: a.block, ents: ents.map(libPairs) });
   }
   addedRaw.push(...kursExport(layer));
+  if (typeof areasDxf === 'function') addedRaw.push(...areasDxf(f));
   for (const k of Object.keys(P.eq.notes || {})) {
     const it = itemByKey(k), d = it && noteDisp(it);
     if (!d) continue;
