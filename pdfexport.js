@@ -333,7 +333,7 @@ function pdfContent(L) {
     const segs = [];
     for (let k = 0; k < g.pts.length; k += 4) { const a = T(g.pts[k], g.pts[k + 1]), b = T(g.pts[k + 2], g.pts[k + 3]); segs.push([a[0], a[1], b[0], b[1]]); }
     pen.stroke(col, 0.35); pen.lines(segs);
-    for (const t of g.texts) { const p = T(t.x, t.y); pen.text(col, p[0], p[1], t.h * Math.abs(it.sx), t.rot - it.r, t.s, t.ha, t.va); }
+    for (const t0 of g.texts) { const t = upright(t0, it.r, it.sx, it.sy), p = T(t.x, t.y); pen.text(col, p[0], p[1], t.h * Math.abs(it.sx), t.rot - it.r, t.s, t.ha, t.va); }
     for (const t0 of it.labels) { const t = labelDisp(it, t0); if (t) pen.text(col, t.x, t.y, t.h, t.rot, t.s, t.ha, t.va); }
     if (!it.numLabel && it.n >= 2 && EQ.num && EQ.num[it.block]) {
       const q = numPos(it), t = EQ.num[it.block].t;

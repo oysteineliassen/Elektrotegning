@@ -29,7 +29,7 @@ const LIB = [
   { name: 'EL_ENDEVENDER', label: 'Endevender', like: /bryter|switch/i, ring: true, ents: SW([...LEV(1, 1), ...LEV(-1, -0.55)]) },
   { name: 'EL_SERIEVENDER', label: 'Serievender', like: /bryter|switch/i, ring: true, ents: SW([...LEV(1, 1), ...LEV(-1, 1)]) },
   { name: 'EL_KRYSSVENDER', label: 'Kryssvender', like: /bryter|switch/i, ring: true, ents: SW([...LEV(1, 1), ...LEV(-1, 1), ...LEV(1, -0.55), ...LEV(-1, -0.55)]) },
-  { name: 'E_DIMMER', label: 'Dimmer', like: /bryter|switch/i, ring: true, ents: SW([L_([35, 175], [100, 270]), PL([[52, 238], [58, 196], [92, 214]], true)]) },
+  { name: 'E_DIMMER', label: 'Dimmer', like: /bryter|switch/i, ring: true, ents: [L_([0, 0], [0, 90]), C_([0, 140], 50), L_([30, 180], [75, 280]), L_([75, 280], [135, 245]), PL([[20, 250], [20, 208], [100, 212]], true)] },
   { name: 'EL_TRYKKNAPP', label: 'Trykknapp', like: /bryter|switch/i, ring: true, ents: [L_([0, 0], [0, 80]), C_([0, 150], 70), C_([0, 150], 40)] },
   { name: 'EL_TRYKKNAPP_LYS', label: 'Trykk m/lys', like: /bryter|switch/i, ring: true, ents: [L_([0, 0], [0, 80]), C_([0, 150], 70), C_([0, 150], 40), L_([-28, 122], [28, 178]), L_([28, 122], [-28, 178])] },
   { name: 'EL_PIR', label: 'Bevegelse PIR', like: /bryter|switch/i, ring: true, ents: [L_([0, 0], [0, 80]), PL([[0, 80], [-70, 200], [70, 200]], true), L_([-40, 235], [-80, 305]), L_([0, 235], [0, 315]), L_([40, 235], [80, 305])] },
@@ -296,8 +296,14 @@ function drawBlock(ctx, v, dpr, g, x, y, r, sx, sy, col, alpha, k) {
   ctx.strokeStyle = col; ctx.lineWidth = 1.5 * k / (v.s * Math.abs(sx || 1));
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   ctx.stroke(g.path);
-  for (const t of g.texts) drawText(ctx, t, v, 0, 0, col, 0, 0);
+  // midtstilt tekst i symbolet holdes lesbar (ikke opp ned) uansett hvilken vei symbolet vender
+  for (const t of g.texts) drawText(ctx, upright(t, r, sx, sy), v, 0, 0, col, 0, 0);
   ctx.restore();
+}
+function upright(t, r, sx, sy) {
+  if (t.ha !== 'center' || t.va !== 'middle') return t;
+  const a = Math.atan2(Math.sin(-t.rot) * (sy || 1), Math.cos(-t.rot) * (sx || 1)) + r;
+  return Math.cos(a) < -0.01 ? { ...t, rot: t.rot + Math.PI } : t;
 }
 function drawEquip(ctx, v, dpr, o, W, H) {
   syncLinks();
