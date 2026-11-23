@@ -192,6 +192,7 @@ class DxfDoc {
       if (this.wall[sg.l[k]]) wk.push(k);
     }
     this.wallIdx = Int32Array.from(wk);
+    this.doors = findDoorGaps(sg, this.wallIdx, P.mmPerUnit || 1);
     this.fillPaths = L.map(() => null);
     for (const f of r.fills) {
       if ((f.ins >= 0 && this.eqIns[f.ins]) || !this.fillIn(f)) continue;
@@ -247,6 +248,18 @@ class DxfDoc {
     const g = this.r.segs, X1 = g.x1, Y1 = g.y1, X2 = g.x2, Y2 = g.y2, idx = this.wallIdx;
     let best = Infinity;
     const horiz = dir === 'L' || dir === 'R';
+    // døråpninger: målet stopper ved veggen døra står i, ikke veggen på andre siden
+    for (const s of this.doors || []) {
+      if (horiz) {
+        if (s[1] === s[3] || (y < s[1]) === (y < s[3])) continue;
+        const ix = s[0] + (y - s[1]) * (s[2] - s[0]) / (s[3] - s[1]), d = dir === 'R' ? ix - x : x - ix;
+        if (d > 1e-9 && d < best) best = d;
+      } else {
+        if (s[0] === s[2] || (x < s[0]) === (x < s[2])) continue;
+        const iy = s[1] + (x - s[0]) * (s[3] - s[1]) / (s[2] - s[0]), d = dir === 'D' ? iy - y : y - iy;
+        if (d > 1e-9 && d < best) best = d;
+      }
+    }
     for (let n = 0; n < idx.length; n++) {
       const k = idx[n];
       if (horiz) {
@@ -636,6 +649,70 @@ function drawLoupe(ctx, tgt, isPoint) {
 /* ---------------- Visning ---------------- */
 function toScreen(u) { return { x: u.x * view.s + view.tx, y: u.y * view.s + view.ty }; }
 function toUnit(x, y) { return { x: (x - view.tx) / view.s, y: (y - view.ty) / view.s }; }
+/* ---------- Døråpninger ----------
+   Finner åpninger i veggene (500–1500 mm) og lager usynlige streker over dem, så målene til takpunktene
+   tas fra veggen døra står i. Åpningen kjennes igjen enten som to endestykker (korte streker på tvers av veggen)
+   som står rett overfor hverandre, eller som to veggstreker som slutter og fortsetter på samme linje. */
+function findDoorGaps(sg, idx, mpu) {
+  const tol = 2 / mpu, minG = 500 / mpu, maxG = 1500 / mpu, capMax = 450 / mpu;
+  const key = (x, y) => Math.round(x / tol) + ',' + Math.round(y / tol);
+  const deg = new Map();
+  for (const k of idx) for (const [x, y] of [[sg.x1[k], sg.y1[k]], [sg.x2[k], sg.y2[k]]]) { const q = key(x, y); deg.set(q, (deg.get(q) || 0) + 1); }
+  const segs = [...idx].map(k => ({ k, ax: sg.x1[k], ay: sg.y1[k], bx: sg.x2[k], by: sg.y2[k] }));
+  const crossesWall = (x1, y1, x2, y2, skip) => {
+    for (const s of segs) {
+      if (skip.includes(s.k)) continue;
+      const d1 = (s.bx - s.ax) * (y1 - s.ay) - (s.by - s.ay) * (x1 - s.ax), d2 = (s.bx - s.ax) * (y2 - s.ay) - (s.by - s.ay) * (x2 - s.ax);
+      const d3 = (x2 - x1) * (s.ay - y1) - (y2 - y1) * (s.ax - x1), d4 = (x2 - x1) * (s.by - y1) - (y2 - y1) * (s.bx - x1);
+      if (((d1 > 1e-9 && d2 < -1e-9) || (d1 < -1e-9 && d2 > 1e-9)) && ((d3 > 1e-9 && d4 < -1e-9) || (d3 < -1e-9 && d4 > 1e-9))) return true;
+    }
+    return false;
+  };
+  const out = [];
+  // a) endestykker
+  const caps = segs.filter(s => { const L = Math.hypot(s.bx - s.ax, s.by - s.ay); return L > tol && L <= capMax && deg.get(key(s.ax, s.ay)) >= 2 && deg.get(key(s.bx, s.by)) >= 2; })
+    .map(s => { const L = Math.hypot(s.bx - s.ax, s.by - s.ay); return { ...s, ux: (s.bx - s.ax) / L, uy: (s.by - s.ay) / L, mx: (s.ax + s.bx) / 2, my: (s.ay + s.by) / 2, L }; });
+  const used = new Set();
+  for (let i = 0; i < caps.length; i++) {
+    const A = caps[i];
+    let best = null, bd = Infinity;
+    for (let j = 0; j < caps.length; j++) {
+      if (i === j) continue;
+      const B = caps[j];
+      if (Math.abs(A.ux * B.uy - A.uy * B.ux) > 0.1) continue;
+      const dx = B.mx - A.mx, dy = B.my - A.my, d = Math.hypot(dx, dy);
+      if (d < minG || d > maxG || Math.abs((dx * A.ux + dy * A.uy) / d) > 0.15 || Math.abs(A.L - B.L) > 60 / mpu) continue;
+      if (d < bd && !crossesWall(A.mx, A.my, B.mx, B.my, [A.k, B.k])) { bd = d; best = B; }
+    }
+    if (!best) continue;
+    const id = [A.k, best.k].sort().join('-');
+    if (used.has(id)) continue;
+    used.add(id);
+    const pa = [[A.ax, A.ay], [A.bx, A.by]], pb = [[best.ax, best.ay], [best.bx, best.by]];
+    const pr = p => p[0] * A.ux + p[1] * A.uy;
+    pa.sort((p, q) => pr(p) - pr(q)); pb.sort((p, q) => pr(p) - pr(q));
+    out.push([pa[0][0], pa[0][1], pb[0][0], pb[0][1]], [pa[1][0], pa[1][1], pb[1][0], pb[1][1]]);
+  }
+  // b) veggstreker som slutter og fortsetter på samme linje
+  const ends = [];
+  for (const s of segs) {
+    const L = Math.hypot(s.bx - s.ax, s.by - s.ay);
+    if (L <= capMax) continue;
+    const ux = (s.bx - s.ax) / L, uy = (s.by - s.ay) / L;
+    if (deg.get(key(s.ax, s.ay)) === 1) ends.push({ k: s.k, x: s.ax, y: s.ay, ux: -ux, uy: -uy });
+    if (deg.get(key(s.bx, s.by)) === 1) ends.push({ k: s.k, x: s.bx, y: s.by, ux, uy });
+  }
+  for (let i = 0; i < ends.length; i++) for (let j = i + 1; j < ends.length; j++) {
+    const p = ends[i], q = ends[j], dx = q.x - p.x, dy = q.y - p.y, d = Math.hypot(dx, dy);
+    if (d < minG || d > maxG) continue;
+    // p peker mot q, q peker mot p, og begge ligger på samme linje
+    if ((dx * p.ux + dy * p.uy) / d < 0.97 || (-dx * q.ux - dy * q.uy) / d < 0.97) continue;
+    if (crossesWall(p.x, p.y, q.x, q.y, [p.k, q.k])) continue;
+    out.push([p.x, p.y, q.x, q.y]);
+  }
+  return out;
+}
+
 /* ---------- Ramme rundt plantegningen ---------- */
 let frameDraft = null;
 // Enhet ut fra målsettingen: tallet som vises delt på lengden i tegningen. Tall vises vanligvis i mm (eller m).

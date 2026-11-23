@@ -1374,7 +1374,7 @@ function curVar(g) {
   const last = S.palLast && S.palLast[g.id];
   return g.vars.find(v => vkey(v) === last) || g.vars[0];
 }
-function drawSym(c, v, size) {
+function drawPalSym(c, v, size) {
   c.clearRect(0, 0, size, size);
   if (v.b === '#VK') { // varmekabelfelt
     c.setLineDash([7, 5]); c.strokeStyle = '#b91c1c'; c.lineWidth = 3; c.strokeRect(size * .14, size * .22, size * .72, size * .56); c.setLineDash([]);
@@ -1398,7 +1398,7 @@ function buildPalette() {
   el.innerHTML = groups.map(g => { const v = curVar(g); return `<button class="pchip grp ${eqArm && vkey({ b: eqArm, n: eqArmN }) === vkey(v) ? 'on' : ''}" data-g="${g.id}"><canvas width="88" height="88"></canvas><span>${esc(v.label)}</span>${g.vars.length > 1 ? `<i class="pmore" aria-label="Flere ${esc(g.name.toLowerCase())}">${CHEV}</i>` : ''}</button>`; }).join('');
   el.querySelectorAll('.pchip').forEach(btn => {
     const g = groups.find(q => q.id === btn.dataset.g), v = curVar(g);
-    drawSym($('canvas', btn).getContext('2d'), v, 88);
+    drawPalSym($('canvas', btn).getContext('2d'), v, 88);
     palPointer(btn, v, g);
   });
   requestAnimationFrame(updFade);
@@ -1411,7 +1411,7 @@ function openVariants(g) {
   pop.classList.add('on', 'vars');
   pop.querySelectorAll('[data-i]').forEach(b => {
     const v = g.vars[+b.dataset.i];
-    drawSym($('canvas', b).getContext('2d'), v, 88);
+    drawPalSym($('canvas', b).getContext('2d'), v, 88);
     b.onclick = () => { S.palLast = { ...(S.palLast || {}), [g.id]: vkey(v) }; saveS(); closeVariants(); setArm(v.b, v.n); };
   });
   $('[data-x]', pop).onclick = closeVariants;
