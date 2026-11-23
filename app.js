@@ -855,7 +855,7 @@ cv.addEventListener('pointerdown', e => {
   const p = pos(e);
   ptrs.set(e.pointerId, p);
   if (ptrs.size === 1 && eqActive() && mode === 'edit') {
-    const hv = eqTool === 'sel' && typeof hitAreaHandle === 'function' ? hitAreaHandle(p.x, p.y) : null;
+    const hv = eqTool === 'sel' && typeof hitAreaHandle === 'function' && !(typeof vkSplit !== 'undefined' && vkSplit) ? hitAreaHandle(p.x, p.y) : null;
     if (hv) { gest = { type: 'pending', x0: p.x, y0: p.y, hv, v0: { ...view } }; return; }
     const ht = eqTool === 'text' ? hitText(p.x, p.y) : null;
     const hk = eqTool === 'sel' ? hitKurs(p.x, p.y) : null;
@@ -1664,6 +1664,7 @@ function backStep() {
   if (mode === 'calib') { $('#bannerBtn').click(); return true; }
   if (mode === 'joist') { $('#bannerBtn').click(); return true; }
   if (mode === 'frame') { endFrame(); return true; }
+  if (typeof vkSplit !== 'undefined' && vkSplit) { vkSplit = null; setBanner(null); req(); return true; }
   if (eq && eqTool === 'run') { if (runSel) { runSel = null; updateEqBar(); req(); } else setRunTool(false); updToolsBtn(); return true; }
   if (eq && eqTool === 'text') { if (txtSel) { txtClear(); txtMulti = false; updateEqBar(); req(); } else setTextTool(false); updToolsBtn(); return true; }
   if (eq && typeof areaSel !== 'undefined' && areaSel) { areaSel = null; updateEqBar(); req(); return true; }

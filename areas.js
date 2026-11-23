@@ -198,6 +198,11 @@ function areaVertexDrag(h, p) {
 function drawAreas(ctx, v, dpr, o) {
   const list = vkAreas();
   if (!list.length) return;
+  if (vkSplit && vkSplit.pts.length && !o.export) {
+    ctx.save(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.strokeStyle = '#111'; ctx.lineWidth = 2.5;
+    for (const p of vkSplit.pts) { const x = p[0] * v.s + v.tx, y = p[1] * v.s + v.ty; ctx.beginPath(); ctx.moveTo(x - 10, y); ctx.lineTo(x + 10, y); ctx.moveTo(x, y - 10); ctx.lineTo(x, y + 10); ctx.stroke(); }
+    ctx.restore();
+  }
   ctx.save(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const k = o.k || 1;
   for (const a of list) {
@@ -227,12 +232,13 @@ function areaSheet() {
     title: 'Varmekabel ' + a.label,
     sub: `${vkM2Txt(a)} m² · ${a.inset ?? VK_INSET} mm fra vegg`,
     hint: 'Dra de hvite hjørnene. Dra eller trykk på + for å legge til et hjørne.',
-    acts: abtn('vkname', 'edit', 'Navn') + abtn('vkinset', '<b>mm</b>', 'Avstand til vegg') + abtn('vkdel', 'del', 'Slett', 'dz')
+    acts: abtn('vkname', 'edit', 'Navn') + abtn('vksplit', '<svg class="ic" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="1" stroke-dasharray="3 2"/><path d="M14 2L10 22"/></svg>', 'Del i to') + abtn('vkinset', '<b>mm</b>', 'Avstand til vegg') + abtn('vkdel', 'del', 'Slett', 'dz')
   };
 }
 function areaAction(act) {
   const a = vkById(areaSel);
   if (!a) return;
+  if (act === 'vksplit') { vkSplit = { id: a.id, pts: [] }; setBanner(`<b>Del ${esc(a.label)}</b><small>Trykk to punkter tvers over feltet der det skal deles</small>`, 'Avbryt', () => { vkSplit = null; setBanner(null); req(); }, true); req(); return; }
   if (act === 'vkdel') { pushUndo(); P.eq.areas = vkAreas().filter(q => q !== a); areaSel = null; save(); updateEqBar(); req(); return; }
   if (act === 'vkname') return promptDlg('Navn på feltet', 'Navn', a.label, v => { pushUndo(); a.label = v.trim() || a.label; save(); updateEqBar(); req(); });
   if (act === 'vkinset') return promptDlg('Avstand fra vegg (mm)', 'mm – feltet finnes på nytt fra veggene', String(a.inset ?? VK_INSET), v => {
@@ -242,6 +248,50 @@ function areaAction(act) {
     if (!poly) { toast('Fant ikke rommet igjen – juster hjørnene for hånd'); return; }
     pushUndo(); a.pts = poly; a.inset = n; save(); updateEqBar(); req();
   });
+}
+// Dele et felt i to langs en strek brukeren trykker opp (to punkter)
+let vkSplit = null;
+function vkSplitTap(u) {
+  vkSplit.pts.push([u.x, u.y]);
+  if (vkSplit.pts.length < 2) { setBanner(`<b>Del feltet</b><small>Trykk punkt nummer to på andre siden</small>`, 'Avbryt', () => { vkSplit = null; setBanner(null); req(); }, true); req(); return; }
+  const a = vkById(vkSplit.id), [A, B] = vkSplit.pts;
+  vkSplit = null; setBanner(null);
+  const parts = a && splitPoly(a.pts, A, B);
+  if (!parts) { toast('Streken må gå tvers over feltet – prøv igjen'); req(); return; }
+  pushUndo();
+  parts.sort((p, q) => polyArea(q) - polyArea(p));
+  a.pts = parts[0];
+  const b = { id: uid(), label: nextVkLabel(), pts: parts[1], inset: a.inset };
+  vkAreas().push(b);
+  save(); updateEqBar(); req();
+  toast(`Delt: ${a.label} ${vkM2Txt(a)} m² og ${b.label} ${vkM2Txt(b)} m²`);
+}
+// skjær polygonet langs linja gjennom A–B, mellom de to kantene nærmest midt på streken
+function splitPoly(pts, A, B) {
+  const dx = B[0] - A[0], dy = B[1] - A[1], L = Math.hypot(dx, dy);
+  if (L < 1e-9) return null;
+  const ux = dx / L, uy = dy / L, mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2;
+  if (!inPoly(mx, my, pts)) return null;
+  const hits = [];
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i], q = pts[(i + 1) % pts.length];
+    const ex = q[0] - p[0], ey = q[1] - p[1], den = ux * ey - uy * ex;
+    if (Math.abs(den) < 1e-12) continue;
+    const t = ((p[0] - mx) * ey - (p[1] - my) * ex) / den;       // langs streken fra midtpunktet
+    const s = ((p[0] - mx) * uy - (p[1] - my) * ux) / den;       // langs kanten
+    if (s < -1e-9 || s > 1 + 1e-9) continue;
+    hits.push({ i, t, x: mx + ux * t, y: my + uy * t });
+  }
+  const neg = hits.filter(h => h.t < 0).sort((a, b) => b.t - a.t)[0], pos = hits.filter(h => h.t > 0).sort((a, b) => a.t - b.t)[0];
+  if (!neg || !pos) return null;
+  let [h1, h2] = neg.i < pos.i ? [neg, pos] : [pos, neg];
+  const X = [h1.x, h1.y], Y = [h2.x, h2.y];
+  const p1 = [X, ...pts.slice(h1.i + 1, h2.i + 1), Y];
+  const p2 = [Y, ...pts.slice(h2.i + 1), ...pts.slice(0, h1.i + 1), X];
+  const clean = p => p.filter((q, i) => { const r = p[(i + 1) % p.length]; return Math.hypot(q[0] - r[0], q[1] - r[1]) > 1e-6; });
+  const c1 = clean(p1), c2 = clean(p2);
+  if (c1.length < 3 || c2.length < 3 || polyArea(c1) < 1e-6 || polyArea(c2) < 1e-6) return null;
+  return [c1, c2];
 }
 // eksport til DXF: lukket polylinje + tekst
 function areasDxf(f) {

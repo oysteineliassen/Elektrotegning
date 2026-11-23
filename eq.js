@@ -423,6 +423,7 @@ function eqSelect(key, add) {
 function groupItems() { return [...eqSet].map(itemByKey).filter(Boolean); }
 
 function eqTap(x, y, g) {
+  if (typeof vkSplit !== 'undefined' && vkSplit) { vkSplitTap(toUnit(x, y)); return; }
   if (eqTool === 'text') { textTap(x, y, g); return; }
   if (g.hk) { runSel = null; eqSelect(g.hk); return; }
   if (eqTool === 'run') {
