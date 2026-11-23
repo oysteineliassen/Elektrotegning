@@ -638,6 +638,46 @@ function toScreen(u) { return { x: u.x * view.s + view.tx, y: u.y * view.s + vie
 function toUnit(x, y) { return { x: (x - view.tx) / view.s, y: (y - view.ty) / view.s }; }
 /* ---------- Ramme rundt plantegningen ---------- */
 let frameDraft = null;
+// Enhet ut fra målsettingen: tallet som vises delt på lengden i tegningen. Tall vises vanligvis i mm (eller m).
+function dimUnits(r) {
+  const F = [['mm', 1], ['cm', 10], ['m', 1000], ['in', 25.4], ['ft', 304.8]], ratios = [];
+  for (const d of r.dims || []) {
+    if (d.t !== 0 && d.t !== 1) continue;
+    const dx = d.x3 - d.x2, dy = d.y3 - d.y2, a = d.rot * Math.PI / 180;
+    const L = d.t === 1 ? Math.hypot(dx, dy) : Math.abs(dx * Math.cos(a) + dy * Math.sin(a));
+    const m = /-?\d+(?:[.,]\d+)?/.exec(String(d.txt || '').replace(/\s/g, ''));
+    if (!m || L <= 0) continue;
+    const v = parseFloat(m[0].replace(',', '.'));
+    if (!(v > 0)) continue;
+    ratios.push(v / L);
+  }
+  if (ratios.length < 3) return null;
+  ratios.sort((x, y) => x - y);
+  const med = ratios[Math.floor(ratios.length / 2)];
+  const agree = ratios.filter(x => Math.abs(x / med - 1) < 0.02).length;
+  if (agree < Math.max(3, ratios.length * 0.6)) return null;
+  // tallene kan være i mm eller m: prøv begge
+  const w = r.bounds ? r.bounds.x1 - r.bounds.x0 : 0;
+  for (const disp of [1, 1000]) {
+    const f = med * disp;
+    const hit = F.find(([, k]) => Math.abs(f / k - 1) < 0.02);
+    // må gi en fornuftig størrelse på tegningen (1 m – 2 km)
+    if (hit && (!w || (w * hit[1] > 1000 && w * hit[1] < 2e6))) return { units: hit[0], n: agree };
+  }
+  return null;
+}
+// eldre prosjekter: sjekk enheten mot målsettingen én gang
+function checkUnitsExisting() {
+  if (!P || !doc || doc.kind !== 'dxf' || P.unitSrc) return;
+  const du = dimUnits(doc.r);
+  if (!du) { P.unitSrc = 'fil'; save(); return; }
+  if (du.units === P.units) { P.unitSrc = `målsetting (${du.n} mål)`; save(); return; }
+  dialog(`<h2>Enhet i tegningen</h2><p>${du.n} mål i tegningen tyder på at den er tegnet i <b>${du.units}</b>, men prosjektet bruker <b>${P.units}</b>. Med feil enhet blir målestokken på utskrift og målene til takpunktene feil.</p>
+    <div class="btns"><button data-x>Behold ${P.units}</button><button class="primary" data-ok>Bruk ${du.units}</button></div>`, (el, close) => {
+    $('[data-x]', el).onclick = () => { P.unitSrc = 'valgt'; save(); close(); };
+    $('[data-ok]', el).onclick = () => { P.units = du.units; P.mmPerUnit = UNITS[du.units]; P.unitSrc = `målsetting (${du.n} mål)`; invalidateDims(); save(); updateTitle(); req(); close(); toast('Enhet endret til ' + du.units); };
+  });
+}
 function startFrame() {
   mode = 'frame'; frameDraft = null; select(null);
   if (typeof eqSel !== 'undefined') { eqSel = null; eqSet.clear(); updateEqBar(); }
@@ -1237,7 +1277,7 @@ function openSettings() {
   const opt = (arr, cur) => arr.map(([v, t]) => `<option value="${v}" ${String(v) === String(cur) ? 'selected' : ''}>${t}</option>`).join('');
   dialog(`<h2>Innstillinger</h2>
     ${isPdf ? `<div class="setrow"><span>Målestokk<br><small style="color:var(--muted)">${esc(P.scaleText || '–')}</small></span><button data-scale>Endre</button></div>`
-      : `<div class="setrow"><span>Enhet i DXF</span><select id="sUnit">${opt([['mm', 'mm'], ['cm', 'cm'], ['m', 'meter'], ['in', 'tommer'], ['ft', 'fot']], P.units)}</select></div>
+      : `<div class="setrow"><span>Enhet i DXF</span><select id="sUnit">${opt([['mm', 'mm'], ['cm', 'cm'], ['m', 'meter'], ['in', 'tommer'], ['ft', 'fot']], P.units)}</select></div><p style="margin:-4px 0 8px;font-size:12px">Kilde: ${esc(P.unitSrc === 'fil' ? 'lagret i DXF-fila' : P.unitSrc === 'valgt' ? 'valgt av deg' : P.unitSrc === 'gjettet' ? 'gjettet ut fra størrelsen – sjekk' : P.unitSrc || 'ukjent')}</p>
          <div class="setrow"><span>Lag og vegger</span><button data-layers>Velg lag</button></div>`}
     <div class="setrow"><span>Steg ved flytting</span><select id="sSnap">${opt([[0, 'Av'], [1, '1 mm'], [5, '5 mm'], [10, '10 mm'], [50, '50 mm'], [100, '100 mm']], S.snap)}</select></div>
     <div class="setrow"><span>Vis mål</span><select id="sDims">${opt([['all', 'Alle punkter'], ['sel', 'Kun valgt']], S.dims)}</select></div>
@@ -1250,7 +1290,7 @@ function openSettings() {
     $('[data-x]', el).onclick = close;
     const sc = $('[data-scale]', el); if (sc) sc.onclick = () => { close(); askScale(); };
     const ly = $('[data-layers]', el); if (ly) ly.onclick = () => { close(); openLayers(); };
-    const u = $('#sUnit', el); if (u) u.onchange = () => { P.units = u.value; P.mmPerUnit = UNITS[u.value]; save(); updateTitle(); req(); };
+    const u = $('#sUnit', el); if (u) u.onchange = () => { P.units = u.value; P.mmPerUnit = UNITS[u.value]; P.unitSrc = 'valgt'; invalidateDims(); save(); updateTitle(); req(); };
     $('#sSnap', el).onchange = e => { S.snap = +e.target.value; saveS(); };
     $('#sDims', el).onchange = e => { S.dims = e.target.value; saveS(); req(); };
     $('#sSym', el).oninput = e => { S.sym = +e.target.value; saveS(); req(); };
@@ -1506,6 +1546,7 @@ async function openProject(p, fresh) {
   $('#modeSeg').classList.toggle('on', doc.kind === 'dxf');
   eqSel = null; eqArm = null;
   if (doc.kind === 'dxf') eqInit();
+  if (doc.kind === 'dxf' && !P.unitSrc) setTimeout(checkUnitsExisting, 400);
   edMode = 'mal'; setEdMode(doc.kind === 'dxf' ? 'utstyr' : 'mal');
   resize();
   let v = null;
@@ -1648,18 +1689,22 @@ async function handleFile(f) {
       const r = DXF.parseDXF(DXF.decodeBytes(buf));
       if (!r.segs.n) throw new Error('Fant ingen linjer i DXF-filen');
       const unitMap = { 1: 'in', 2: 'ft', 4: 'mm', 5: 'cm', 6: 'm' };
-      let units = unitMap[r.insunits];
+      let units = unitMap[r.insunits], unitSrc = units ? 'fil' : 'gjettet';
       if (!units) { const w = r.bounds ? r.bounds.x1 - r.bounds.x0 : 0; units = w > 300 ? 'mm' : 'm'; }
+      const du = dimUnits(r);
+      let unitMsg = '';
+      if (du && du.units !== units) { unitMsg = ` · enhet satt til ${du.units} ut fra ${du.n} mål (filen sa ${unitSrc === 'fil' ? units : 'ingenting'})`; units = du.units; }
+      if (du) unitSrc = `målsetting (${du.n} mål)`;
       const layers = {};
       const wallLs = r.layers.filter(l => l.count > 0 && !l.off && WALL_RE.test(l.name));
       r.layers.forEach(l => {
         layers[l.name] = { show: !l.off, wall: wallLs.length ? wallLs.includes(l) : (!l.off && l.count > 0) };
       });
-      const p = { id: uid(), name, kind: 'dxf', fileName: f.name, units, mmPerUnit: UNITS[units], layers, points: [], created: Date.now(), updated: Date.now() };
+      const p = { id: uid(), name, kind: 'dxf', fileName: f.name, units, unitSrc, mmPerUnit: UNITS[units], layers, points: [], created: Date.now(), updated: Date.now() };
       await store.putFile(p.id, new Blob([buf], { type: 'application/octet-stream' }));
       await store.put(p);
       await openProject(p, true);
-      toast(wallLs.length ? 'Vegger funnet' : 'Fant ikke vegglag – velg i Lag og vegger');
+      toast((wallLs.length ? 'Vegger funnet' : 'Fant ikke vegglag – velg i Lag og vegger') + unitMsg);
       return;
     }
     throw new Error('Ukjent filtype: .' + ext);

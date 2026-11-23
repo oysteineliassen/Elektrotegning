@@ -375,7 +375,17 @@
             if (depth > 10) break;
             const b = blocks.get(str(r, 2, ''));
             if (!b) break;
-            if (r.type === 'DIMENSION') { doEnts(b.ents, m, lname, depth + 1, false); break; }
+            if (r.type === 'DIMENSION') {
+              if (top) { // målsetting: tallet arkitekten viser + geometrisk lengde (for å sjekke enheten)
+                let txt = str(r, 1, '');
+                if (!txt || txt.includes('<>')) for (const e of b.ents) {
+                  if (e.type === 'TEXT') { txt = str(e, 1, ''); break; }
+                  if (e.type === 'MTEXT') { let s = ''; for (let k = 0; k < e.g.length; k += 2) if (e.g[k] === 3) s += e.g[k + 1]; txt = cleanMText(s + str(e, 1, '')); break; }
+                }
+                dims.push({ t: num(r, 70, 0) & 7, x2: num(r, 13, 0), y2: num(r, 23, 0), x3: num(r, 14, 0), y3: num(r, 24, 0), rot: num(r, 50, 0), txt });
+              }
+              doEnts(b.ents, m, lname, depth + 1, false); break;
+            }
             // attributter som hører til innsettingen
             let j = i + 1;
             const attribs = [];
@@ -421,7 +431,7 @@
       if (out.length) C.fills.push({ loops: out, l: li, ins: curIns });
     }
 
-    const inserts = [];
+    const inserts = [], dims = [];
     doEnts(ents, I, null, 0, true);
     const W = C;
 
@@ -467,7 +477,7 @@
     }
 
     return {
-      segs, texts: W.texts, fills: W.fills, layers: layerList, insunits, bounds,
+      segs, texts: W.texts, fills: W.fills, layers: layerList, insunits, bounds, dims,
       inserts, blockGeom, blockNames: [...blocks.keys()].filter(n => !n.startsWith('*')),
       _src: { lines, handseedLn, entEndLn, blocksEndLn, brEndLn, brTable }
     };

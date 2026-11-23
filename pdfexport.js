@@ -46,7 +46,7 @@ function openExport() {
       if (fmt === 'pdf') {
         const L = pdfLayout(ex);
         lay = L ? `${ex.paper} ${L.land ? 'liggende' : 'stående'} · 1:${L.N}` + (L.fits ? '' : ' · får ikke plass, beskjæres') : 'mangler målestokk';
-        $('#xInfo', el).textContent = lay;
+        $('#xInfo', el).textContent = lay + (doc.kind === 'dxf' ? ` · enhet ${P.units}` + (P.unitSrc && /målsetting/.test(P.unitSrc) ? ' (bekreftet av målsettingen)' : P.unitSrc === 'gjettet' ? ' (gjettet – sjekk i Innstillinger)' : '') : '');
       }
       const what = !isDxf || ex.what === 'mal' ? 'Boreunderlag – takpunkter med mål' : 'Installasjonstegning – uten mål';
       const extra = fmt === 'pdf' && isDxf && ex.what !== 'mal' && ex.lists !== false ? ' · med materialliste og kursliste' : '';
