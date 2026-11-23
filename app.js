@@ -1277,7 +1277,7 @@ function openSettings() {
   const opt = (arr, cur) => arr.map(([v, t]) => `<option value="${v}" ${String(v) === String(cur) ? 'selected' : ''}>${t}</option>`).join('');
   dialog(`<h2>Innstillinger</h2>
     ${isPdf ? `<div class="setrow"><span>Målestokk<br><small style="color:var(--muted)">${esc(P.scaleText || '–')}</small></span><button data-scale>Endre</button></div>`
-      : `<div class="setrow"><span>Enhet i DXF</span><select id="sUnit">${opt([['mm', 'mm'], ['cm', 'cm'], ['m', 'meter'], ['in', 'tommer'], ['ft', 'fot']], P.units)}</select></div><p style="margin:-4px 0 8px;font-size:12px">Kilde: ${esc(P.unitSrc === 'fil' ? 'lagret i DXF-fila' : P.unitSrc === 'valgt' ? 'valgt av deg' : P.unitSrc === 'gjettet' ? 'gjettet ut fra størrelsen – sjekk' : P.unitSrc || 'ukjent')}</p>
+      : `<div class="setrow"><span>Enhet i DXF</span><select id="sUnit">${opt([['mm', 'mm'], ['cm', 'cm'], ['m', 'meter'], ['in', 'tommer'], ['ft', 'fot']], P.units)}</select></div><div class="setrow"><span>Nye veggsymboler</span><select id="sInst">${opt([['skjult', 'Skjult anlegg (med ring)'], ['open', 'Åpent anlegg (uten ring)']], P.eq && P.eq.openInst ? 'open' : 'skjult')}</select></div><p style="margin:-4px 0 8px;font-size:12px">Kilde: ${esc(P.unitSrc === 'fil' ? 'lagret i DXF-fila' : P.unitSrc === 'valgt' ? 'valgt av deg' : P.unitSrc === 'gjettet' ? 'gjettet ut fra størrelsen – sjekk' : P.unitSrc || 'ukjent')}</p>
          <div class="setrow"><span>Lag og vegger</span><button data-layers>Velg lag</button></div>`}
     <div class="setrow"><span>Steg ved flytting</span><select id="sSnap">${opt([[0, 'Av'], [1, '1 mm'], [5, '5 mm'], [10, '10 mm'], [50, '50 mm'], [100, '100 mm']], S.snap)}</select></div>
     <div class="setrow"><span>Vis mål</span><select id="sDims">${opt([['all', 'Alle punkter'], ['sel', 'Kun valgt']], S.dims)}</select></div>
@@ -1290,6 +1290,7 @@ function openSettings() {
     $('[data-x]', el).onclick = close;
     const sc = $('[data-scale]', el); if (sc) sc.onclick = () => { close(); askScale(); };
     const ly = $('[data-layers]', el); if (ly) ly.onclick = () => { close(); openLayers(); };
+    const oi = $('#sInst', el); if (oi) oi.onchange = () => { P.eq.openInst = oi.value === 'open'; save(); if (typeof buildPalette === 'function') buildPalette(); };
     const u = $('#sUnit', el); if (u) u.onchange = () => { P.units = u.value; P.mmPerUnit = UNITS[u.value]; P.unitSrc = 'valgt'; invalidateDims(); save(); updateTitle(); req(); };
     $('#sSnap', el).onchange = e => { S.snap = +e.target.value; saveS(); };
     $('#sDims', el).onchange = e => { S.dims = e.target.value; saveS(); req(); };

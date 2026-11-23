@@ -36,6 +36,7 @@ const LIB = [
   { name: 'E_TERMOSTAT', label: 'Termostat', like: /bryter|switch/i, ring: true, ents: [L_([0, 0], [0, 90]), PL([[-75, 90], [75, 90], [75, 240], [-75, 240]], true), T_([0, 165], 60, '°C')] },
   { name: 'EL_VEGGLYS', label: 'Vegglys', like: /lys|light/i, ring: true, ents: [L_([0, 0], [0, 130]), L_([-70, 130], [70, 270]), L_([70, 130], [-70, 270])] },
   { name: 'EL_PANELOVN', label: 'Panelovn', like: /ovn|varme|termo|bryter|switch/i, ents: [PL([[-350, 25], [350, 25], [350, 155], [-350, 155]], true), T_([0, 90], 70, 'OV')] },
+  { name: 'EL_SIKRINGSSKAP', label: 'Sikringsskap', like: /tavle|skap|stikk|bryter/i, ents: [PL([[-300, 0], [300, 0], [300, 180], [-300, 180]], true), L_([-300, 180], [300, 0]), T_([0, 120], 80, 'FS')] },
   { name: 'EL_PORTTELEFON', label: 'Porttelefon', like: /bryter|switch|stikk/i, ring: true, ents: [L_([0, 0], [0, 70]), PL([[-130, 70], [130, 70], [130, 250], [-130, 250]], true), PL([[-15, 130], [35, 100], [35, 220], [-15, 190]], true), L_([-95, 160], [-35, 160])] },
   // takmontert (sentrert)
   { name: 'EL_LYSPUNKT', label: 'Lyspunkt', like: /lys|light/i, ceil: true, ents: [L_([-85, -85], [85, 85]), L_([-85, 85], [85, -85])] },
@@ -70,7 +71,7 @@ function libEnts(name) {
 function gname(it) {
   const d = libDef(it.block);
   if (!d) return it.block;
-  return it.block + (d.num && it.n >= 2 ? '_' + Math.min(9, it.n) : '') + (d.ring && it.stackOn ? '_UR' : '');
+  return it.block + (d.num && it.n >= 2 ? '_' + Math.min(9, it.n) : '') + (d.ring && (it.stackOn || it.open) ? '_UR' : '');
 }
 function igeom(it) { return doc.geom(gname(it)); }
 const PT_BLOCK = { downlight: 'E_DOWNLIGHT', spot: 'E_SPOT', lampe: 'E_LAMPEPUNKT', royk: 'E_ROYKVARSLER', hoyttaler: 'E_HOYTTALER', boks: 'E_KOBLINGSBOKS' };
@@ -178,7 +179,7 @@ function buildItems() {
   }
   for (const a of P.eq.added) {
     EQ.items.push({ key: 'a' + a.id, id: a.id, idx: null, block: a.block, layer: a.layer, li: Math.max(0, layerIndex(a.layer)),
-      x: a.x, y: a.y, r: a.r, ox: a.x, oy: a.y, or: a.r, sx: a.sx || 1, sy: a.sy || 1, tmpl: a.tmpl, del: false, added: true, labels: [], stackOn: a.stackOn || null });
+      x: a.x, y: a.y, r: a.r, ox: a.x, oy: a.y, or: a.r, sx: a.sx || 1, sy: a.sy || 1, tmpl: a.tmpl, del: false, added: true, labels: [], stackOn: a.stackOn || null, open: !!a.open });
   }
   // knytt løse tekster (f.eks. «o/benk», «?») til nærmeste utstyr
   const orig = EQ.items.filter(i => !i.added), lim = 700 / mpu;
@@ -280,7 +281,7 @@ function commitItem(it) {
   if (!it.isPt && P.points) { const lp = P.points.find(p => p.link === it.key); if (lp && !it.del) { const c = itemCenter(it); if (lp.x !== c.x || lp.y !== c.y) { lp.x = c.x; lp.y = c.y; lp._d = null; } } }
   if (it.added) {
     const a = P.eq.added.find(q => q.id === it.id);
-    if (a) Object.assign(a, { x: it.x, y: it.y, r: it.r, n: it.n, stackOn: it.stackOn || undefined });
+    if (a) Object.assign(a, { x: it.x, y: it.y, r: it.r, n: it.n, stackOn: it.stackOn || undefined, open: it.open || undefined });
   } else if (it.del || isChanged(it)) P.eq.edits[it.idx] = { x: it.x, y: it.y, r: it.r, del: it.del || undefined, n: it.n !== it.n0 ? it.n : undefined, stackOn: it.stackOn || undefined };
   else delete P.eq.edits[it.idx];
 }
@@ -457,10 +458,11 @@ function addItem(block, u, n) {
   const it = { key: 'a' + id, id, idx: null, added: true, block, layer, li: Math.max(0, layerIndex(layer)),
     x: u.x, y: u.y, r: like ? like.r : 0, sx: like ? like.sx : 1, sy: like ? like.sy : 1, tmpl: t ? t.idx : null, del: false, labels: [], numLabel: null };
   it.n = it.n0 = n || (eqArm === block && eqArmN) || defaultN(block);
+  if (libDef(block) && libDef(block).ring && P.eq.openInst) it.open = true;
   placeItem(it, u.x, u.y);
   it.ox = it.x; it.oy = it.y; it.or = it.r;
   EQ.items.push(it);
-  P.eq.added.push({ id, block, layer, x: it.x, y: it.y, r: it.r, sx: it.sx, sy: it.sy, tmpl: it.tmpl, n: it.n });
+  P.eq.added.push({ id, block, layer, x: it.x, y: it.y, r: it.r, sx: it.sx, sy: it.sy, tmpl: it.tmpl, n: it.n, open: it.open || undefined });
   if (!eqArm) eqSelect(it.key);
   save();
   return it;
@@ -726,6 +728,7 @@ function updateEqBar() {
         + (countable(it.block) ? abtn('n', `<b>${it.n}×</b>`, 'Uttak') : '') + kb
         + (inStack(it) ? abtn('swap', 'swap', 'Bytt i stabel') : abtn('rot', 'rot', 'Roter') + abtn('flip', 'flip', 'Snu'))
         + (!infoOf(it.block).wall && isLightBlock(it.block) && !linkedPt(it) ? abtn('aspt', '<svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>', 'Bruk som takpunkt') : '')
+        + (it.added && libDef(it.block) && libDef(it.block).ring && !it.stackOn ? abtn('inst', '<svg class="ic" viewBox="0 0 24 24"><path d="M12 3v6"/><circle cx="12" cy="12" r="3"' + (it.open ? ' stroke-dasharray="2 2"' : '') + '/><path d="M12 15v6"/></svg>', it.open ? 'Åpent anlegg' : 'Skjult anlegg', it.open ? '' : 'on') : '')
         + abtn('dup', 'dup', 'Kopier')
         + (isMoved(it) ? abtn('reset', 'reset', 'Prosjektert') : '')
         + abtn('del', 'del', 'Slett', 'dz');
@@ -776,6 +779,7 @@ function eqAction(a) {
   if (a === 'note') { noteDlg(it); return; }
   if (a === 'photo') { openPhotos(it.key, it.isPt ? (TYPES[it.pt.type] || TYPES.downlight).name : cap(prettyBlock(it.block))); return; }
   if (a === 'aspt') { useAsPoint(it); return; }
+  if (a === 'inst') { pushUndo(); it.open = !it.open; commitItem(it); save(); updateEqBar(); req(); toast(it.open ? 'Åpent anlegg – uten ring' : 'Skjult anlegg – med ring'); return; }
   if (it.isPt) {
     if (a === 'del') { pushUndo(); P.points = P.points.filter(q => q !== it.pt); eqSel = null; save(); updateEqBar(); updateTitle(); req(); }
     return;
@@ -1344,6 +1348,7 @@ const PGROUPS = [
   { id: 'lys', name: 'Lys', re: /lys|light|lampe|spot|down/i, lib: [['EL_LYSPUNKT'], ['EL_VEGGLYS'], ['E_DOWNLIGHT'], ['E_SPOT']] },
   { id: 'varme', name: 'Varme', re: /termo|ovn|varme|heat/i, lib: [['E_TERMOSTAT'], ['EL_PANELOVN'], ['#VK', null, 'Varmekabel']] },
   { id: 'signal', name: 'Signal', re: /port|ringe|klokke|r[oø]yk|h[oø]yttal|alarm/i, lib: [['EL_PORTTELEFON'], ['E_ROYKVARSLER'], ['E_HOYTTALER']] },
+  { id: 'tavle', name: 'Tavle', re: /tavle|skap|fordeling|sikring/i, lib: [['EL_SIKRINGSSKAP']] },
   { id: 'annet', name: 'Annet', re: null, lib: [['E_KOBLINGSBOKS']] }
 ];
 const vkey = v => v.b + (v.n ? '#' + v.n : '');
@@ -1369,7 +1374,7 @@ function drawSym(c, v, size) {
     c.setLineDash([7, 5]); c.strokeStyle = '#b91c1c'; c.lineWidth = 3; c.strokeRect(size * .14, size * .22, size * .72, size * .56); c.setLineDash([]);
     c.fillStyle = '#b91c1c'; c.font = `700 ${size * .22}px system-ui`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('VK', size / 2, size / 2); return;
   }
-  const name = libDef(v.b) ? gname({ block: v.b, n: v.n || 1 }) : v.b, g = doc.geom(name);
+  const name = libDef(v.b) ? gname({ block: v.b, n: v.n || 1, open: !!(P.eq && P.eq.openInst) }) : v.b, g = doc.geom(name);
   if (!g) return;
   const bb = g.bbox, w = bb.x1 - bb.x0 || 1, h = bb.y1 - bb.y0 || 1, s = size * .8 / Math.max(w, h);
   const t = templateFor(v.b) || likeFor(v.b), col = t ? aci(doc.r.layers[t.li].color) : '#111';
@@ -1394,7 +1399,8 @@ function buildPalette() {
 }
 function openVariants(g) {
   const pop = $('#toolPop');
-  pop.innerHTML = `<div class="vhd"><b>${esc(g.name)}</b><button class="ib" data-x aria-label="Lukk">${ic('x')}</button></div><div class="vgrid">` +
+  const ringG = g.vars.some(v => libDef(v.b) && libDef(v.b).ring);
+  pop.innerHTML = `<div class="vhd"><b>${esc(g.name)}</b>${ringG ? `<button class="instTog ${P.eq.openInst ? '' : 'on'}" data-inst role="switch" aria-checked="${!P.eq.openInst}"><span>${P.eq.openInst ? 'Åpent anlegg' : 'Skjult anlegg'}</span><i class="sw"></i></button>` : ''}<button class="ib" data-x aria-label="Lukk">${ic('x')}</button></div><div class="vgrid">` +
     g.vars.map((v, i) => `<button class="pchip ${vkey(v) === vkey(curVar(g)) ? 'cur' : ''}" data-i="${i}"><canvas width="88" height="88"></canvas><span>${esc(v.label)}</span></button>`).join('') + '</div>';
   pop.classList.add('on', 'vars');
   pop.querySelectorAll('[data-i]').forEach(b => {
@@ -1403,6 +1409,8 @@ function openVariants(g) {
     b.onclick = () => { S.palLast = { ...(S.palLast || {}), [g.id]: vkey(v) }; saveS(); closeVariants(); setArm(v.b, v.n); };
   });
   $('[data-x]', pop).onclick = closeVariants;
+  const it_ = $('[data-inst]', pop);
+  if (it_) it_.onclick = () => { P.eq.openInst = !P.eq.openInst; save(); openVariants(g); buildPalette(); toast(P.eq.openInst ? 'Nye symboler: åpent anlegg (uten ring)' : 'Nye symboler: skjult anlegg (med ring)'); };
 }
 function closeVariants() { const p = $('#toolPop'); p.classList.remove('on', 'vars'); p.innerHTML = ''; }
 let eqArmN = null;
@@ -1439,7 +1447,7 @@ function palPointer(btn, v, g) {
       st.drag = true;
       try { btn.setPointerCapture(e.pointerId); } catch (er) { }
       const t = templateFor(name) || likeFor(name);
-      palDrag = { key: 'drag', block: name, n: v.n || 1, layer: t ? t.layer : '0', li: t ? t.li : 0, x: 0, y: 0, r: t ? t.r : 0, sx: t ? t.sx : 1, sy: t ? t.sy : 1, labels: [], added: true, snap: -1 };
+      palDrag = { key: 'drag', block: name, n: v.n || 1, open: !!(libDef(name) && libDef(name).ring && P.eq.openInst), layer: t ? t.layer : '0', li: t ? t.li : 0, x: 0, y: 0, r: t ? t.r : 0, sx: t ? t.sx : 1, sy: t ? t.sy : 1, labels: [], added: true, snap: -1 };
       try { navigator.vibrate && navigator.vibrate(10); } catch (er) { }
     }
     if (st.drag) {
